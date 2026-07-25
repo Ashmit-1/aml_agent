@@ -2,13 +2,15 @@
 DuckDB-backed query engine for the SAML-D AML transaction dataset.
 
 Provides the composite ``search_transactions`` tool along with convenience
-wrappers for high-value lookups, suspicious-pattern detection, and summary
-aggregations.
+wrappers for high-value lookups, suspicious-pattern detection, summary
+aggregations, and a safe ``execute_sql`` method for LLM-generated SELECT
+queries.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,16 +20,24 @@ from app.tools.models import (
     HighValueParams,
     PaginatedResult,
     SearchParams,
+    SqlQueryParams,
     SummaryParams,
     SummaryResult,
     SuspiciousPatternParams,
 )
 from app.tools.validators import (
+    KNOWN_COLUMNS,
+    get_schema_markdown,
     validate_aggregate_column,
     validate_columns,
+    validate_sql_select,
 )
 
 SINGLE_QUOTE: str = "'"
+
+# Regex to enforce a row limit on raw SQL queries – we inject a LIMIT clause
+# if the user-supplied SQL doesn't already have one.
+_HAS_LIMIT_RE: re.Pattern[str] = re.compile(r"\bLIMIT\b", re.IGNORECASE)
 
 
 @dataclass
@@ -38,6 +48,7 @@ class QueryEngine:
 
         with QueryEngine() as engine:
             result = engine.search_transactions(SearchParams(limit=5))
+            rows   = engine.execute_sql(SqlQueryParams(sql="SELECT * FROM transactions LIMIT 3"))
     """
 
     csv_path: str = field(
@@ -51,7 +62,6 @@ class QueryEngine:
         resolved = os.path.abspath(self.csv_path)
         if not os.path.isfile(resolved):
             raise FileNotFoundError(f"CSV not found at: {resolved}")
-        # Escape single quotes in the path for SQL literal safety
         safe_path = resolved.replace(SINGLE_QUOTE, SINGLE_QUOTE + SINGLE_QUOTE)
         self._conn = duckdb.connect()
         self._conn.execute(
@@ -69,7 +79,7 @@ class QueryEngine:
         self.close()
 
     # ------------------------------------------------------------------
-    # Query builders
+    # Query helpers
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -135,9 +145,17 @@ class QueryEngine:
 
     def search_transactions(self, params: SearchParams) -> PaginatedResult:
         """
-        Composite search tool – apply all provided filters and return
-        paginated, optionally grouped / aggregated results.
-        """
+        Composite search tool that applies all provided filters and returns
+        paginated, optionally grouped/aggregated results.
+
+        **When to use:**
+        - The user asks about specific transactions matching criteria.
+        - Queries involving date ranges, amount thresholds, currencies,
+          locations, accounts, payment types, or laundering status.
+        - Simple aggregations like "how many transactions" or "total volume".
+
+        **Dataset schema (``transactions`` view):**
+        """ + get_schema_markdown()
         # Validate dynamic column references against the known set
         if params.group_by:
             validate_columns(params.group_by)
@@ -195,8 +213,14 @@ class QueryEngine:
         self, params: HighValueParams
     ) -> PaginatedResult:
         """
-        Find high-value transactions (default >= $10K) – a common AML
-        red-flag threshold.
+        Find high-value transactions (default >= $10K).
+
+        **When to use:**
+        - The user asks about "large", "big", or "high-value" transactions.
+        - Queries about transactions exceeding a certain amount threshold.
+        - Regulatory reporting contexts (e.g. CTR – Currency Transaction Reports).
+
+        Delegates to ``search_transactions`` with appropriate defaults.
         """
         search_params = SearchParams(
             min_amount=params.min_amount,
@@ -213,8 +237,18 @@ class QueryEngine:
         self, params: SuspiciousPatternParams
     ) -> PaginatedResult:
         """
-        Detect suspicious AML patterns: transactions filtered by amount,
-        location corridors, currency, and laundering type.
+        Detect suspicious AML patterns among flagged transactions.
+
+        **When to use:**
+        - The user asks about "suspicious", "flagged", or "laundering"
+          transactions.
+        - Investigating high-risk corridors (e.g. RU -> CY, CN -> US).
+        - Analysing specific laundering techniques (structuring, smurfing,
+          trade-based money laundering).
+
+        Note: This tool **always filters** for ``is_laundering = 1``
+        (flagged transactions). The user does not need to specify this.
+        Delegates to ``search_transactions`` with appropriate defaults.
         """
         search_params = SearchParams(
             min_amount=params.min_amount,
@@ -225,7 +259,7 @@ class QueryEngine:
             receiver_location=params.receiver_location,
             payment_currency=params.payment_currency,
             laundering_type=params.laundering_type,
-            is_laundering=1,  # always filter for flagged transactions
+            is_laundering=1,
             sort_by="Amount",
             sort_order="DESC",
             limit=params.limit,
@@ -236,8 +270,15 @@ class QueryEngine:
         self, params: SummaryParams
     ) -> SummaryResult:
         """
-        Aggregated statistics grouped by a dimension (e.g. currency,
-        location, date, laundering type).
+        Aggregated statistics grouped by one or more dimensions.
+
+        **When to use:**
+        - "How many transactions per currency?"
+        - "What is the total volume by country?"
+        - "What is the average transaction amount per payment type?"
+        - Trend analysis over time grouped by date.
+
+        Delegates to ``search_transactions`` with grouping/aggregation.
         """
         validate_columns(params.group_by)
         validate_aggregate_column(params.aggregate_column)
@@ -283,3 +324,34 @@ class QueryEngine:
             rows=[dict(zip(columns, row)) for row in rows],
             returned_count=len(rows),
         )
+
+    def execute_sql(self, params: SqlQueryParams) -> list[dict[str, Any]]:
+        """
+        Execute a **read-only** SQL SELECT statement against the dataset.
+
+        **When to use:**
+        - The user asks a question that cannot be answered with the
+          structured ``search_transactions`` tool (e.g. complex window
+          functions, joins, subqueries, conditional logic, multi-level
+          aggregations).
+        - When the LLM determines it can write a more precise query than
+          the composite tool allows.
+
+        **Safety constraints:**
+        - Only ``SELECT`` statements are allowed (enforced by validator).
+        - Column references are validated against the known schema.
+        - A ``LIMIT`` is always applied (default 500, max 10 000).
+
+        **Dataset schema (``transactions`` view):**
+        """ + get_schema_markdown()
+
+        safe_sql = validate_sql_select(params.sql)
+
+        # Ensure a LIMIT clause exists so we never return millions of rows.
+        if not _HAS_LIMIT_RE.search(safe_sql):
+            safe_sql = safe_sql.rstrip(";") + f" LIMIT {params.limit}"
+
+        rows = self._conn.execute(safe_sql).fetchall()
+        columns = [desc[0] for desc in self._conn.description]
+
+        return [dict(zip(columns, row)) for row in rows]
