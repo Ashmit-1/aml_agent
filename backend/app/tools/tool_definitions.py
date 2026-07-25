@@ -286,7 +286,11 @@ def run_python_code(
     error (str or null), truncated (bool).
     """.format(120)
 
-    return run_code(code=code, timeout_seconds=timeout_seconds)
+    return run_code(
+        code=code,
+        timeout_seconds=timeout_seconds,
+        query_engine=_get_engine(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -371,4 +375,5 @@ __all__ = [
     "get_suspicious_patterns",
     "get_summary_statistics",
     "run_sql_query",
+    "run_python_code",
 ]

@@ -135,7 +135,12 @@ class _RestrictedImporter:
 
     def __init__(self, allowed: dict[str, str | None]) -> None:
         self._allowed = allowed
-        self._original_import = __builtins__["__import__"]  # type: ignore[assignment]
+        # Use getattr because __builtins__ may be a module (not a dict) at module scope
+        bltins = __builtins__
+        if isinstance(bltins, dict):
+            self._original_import = bltins["__import__"]
+        else:
+            self._original_import = getattr(bltins, "__import__")
 
     def __call__(
         self,
@@ -173,6 +178,12 @@ class _RestrictedImporter:
 
 _MAX_OUTPUT_CHARS: int = 50_000
 _MAX_RESULT_STR_LEN: int = 20_000
+
+# Semaphore limiting concurrent sandbox threads to prevent runaway growth.
+_SANDBOX_CONCURRENCY_LIMIT: int = 5
+_sandbox_semaphore: threading.Semaphore = threading.Semaphore(
+    _SANDBOX_CONCURRENCY_LIMIT
+)
 
 
 def _target(
@@ -244,72 +255,94 @@ def run_code(
         except ImportError:
             pass
 
-    # ── Execute in a thread with timeout ────────────────────────────────
+    # ── Enforce concurrency limit ───────────────────────────────────────
 
-    stdout_buf = io.StringIO()
-    result_holder: list[Any] = [None]
-
-    thread = threading.Thread(
-        target=_target,
-        args=(code, global_ns, result_holder),
-        daemon=True,
-    )
-
-    with redirect_stdout(stdout_buf):
-        thread.start()
-        thread.join(timeout=timeout_seconds)
-
-    # ── Collect output ─────────────────────────────────────────────────
-
-    stdout_text = stdout_buf.getvalue()
-    truncated = len(stdout_text) > _MAX_OUTPUT_CHARS
-    if truncated:
-        stdout_text = stdout_text[:_MAX_OUTPUT_CHARS] + "\n... (truncated)"
-
-    # ── Handle timeout ──────────────────────────────────────────────────
-
-    if thread.is_alive():
-        # The thread is still running – we can't kill threads in Python,
-        # but since it's a daemon thread it will exit when the main thread
-        # exits or when the code finishes. We just abandon it.
+    acquired = _sandbox_semaphore.acquire(blocking=False)
+    if not acquired:
         return {
             "success": False,
-            "stdout": stdout_text,
+            "stdout": "",
             "result": None,
             "error": (
-                f"Execution timed out after {timeout_seconds} seconds. "
-                f"Your code was automatically interrupted."
+                f"Too many concurrent sandbox executions "
+                f"(max {_SANDBOX_CONCURRENCY_LIMIT}). Try again later."
             ),
-            "truncated": truncated,
+            "truncated": False,
         }
 
-    # ── Handle result / error ───────────────────────────────────────────
+    try:
+        # ── Execute in a thread with timeout ────────────────────────────
 
-    status, payload = result_holder[0]
+        stdout_buf = io.StringIO()
+        result_holder: list[Any] = [None]
 
-    if status == "error":
-        return {
-            "success": False,
-            "stdout": stdout_text,
-            "result": None,
-            "error": payload,
-            "truncated": truncated,
-        }
-
-    # Success – optionally truncate large result reprs
-    result_val = payload
-    if isinstance(result_val, str) and len(result_val) > _MAX_RESULT_STR_LEN:
-        result_val = (
-            result_val[:_MAX_RESULT_STR_LEN] + "\n... (result truncated)"
+        thread = threading.Thread(
+            target=_target,
+            args=(code, global_ns, result_holder),
+            daemon=True,
         )
 
-    return {
-        "success": True,
-        "stdout": stdout_text,
-        "result": result_val,
-        "error": None,
-        "truncated": truncated,
-    }
+        with redirect_stdout(stdout_buf):
+            thread.start()
+            thread.join(timeout=timeout_seconds)
+
+        # ── Collect output ─────────────────────────────────────────────
+
+        stdout_text = stdout_buf.getvalue()
+        truncated = len(stdout_text) > _MAX_OUTPUT_CHARS
+        if truncated:
+            stdout_text = stdout_text[:_MAX_OUTPUT_CHARS] + "\n... (truncated)"
+
+        # ── Handle timeout ──────────────────────────────────────────────
+
+        if thread.is_alive():
+            # Thread still running – abandon it (daemon threads are cleaned
+            # up on process exit). Semaphore NOT released – runaway thread
+            # holds the slot so we don't accumulate more.
+            return {
+                "success": False,
+                "stdout": stdout_text,
+                "result": None,
+                "error": (
+                    f"Execution timed out after {timeout_seconds} seconds. "
+                    f"Your code was automatically interrupted."
+                ),
+                "truncated": truncated,
+            }
+
+        # ── Handle result / error ───────────────────────────────────────
+
+        status, payload = result_holder[0]
+
+        if status == "error":
+            return {
+                "success": False,
+                "stdout": stdout_text,
+                "result": None,
+                "error": payload,
+                "truncated": truncated,
+            }
+
+        # Success – optionally truncate large result reprs
+        result_val = payload
+        if isinstance(result_val, str) and len(result_val) > _MAX_RESULT_STR_LEN:
+            result_val = (
+                result_val[:_MAX_RESULT_STR_LEN] + "\n... (result truncated)"
+            )
+
+        return {
+            "success": True,
+            "stdout": stdout_text,
+            "result": result_val,
+            "error": None,
+            "truncated": truncated,
+        }
+
+    finally:
+        # Release semaphore *unless* the thread timed out and is still
+        # running – in that case the slot stays occupied.
+        if not thread.is_alive():
+            _sandbox_semaphore.release()
 
 
 __all__ = [
