@@ -188,11 +188,17 @@ class QueryEngine:
             raise FileNotFoundError(f"CSV not found at: {resolved}")
         self._conn = duckdb.connect()
         self._conn.execute(
-            f"CREATE VIEW transactions AS SELECT * FROM read_csv_auto('{resolved}')"
+            f"CREATE VIEW transactions AS SELECT * FROM read_csv_auto('{resolved.replace(chr(39), chr(39)+chr(39))}')"
         )
 
     def close(self) -> None:
         self._conn.close()
+
+    def __enter__(self) -> QueryEngine:
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
 
     # ------------------------------------------------------------------
     # Query builders
