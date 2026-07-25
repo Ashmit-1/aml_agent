@@ -10,8 +10,6 @@ Provides:
 
 from __future__ import annotations
 
-from typing import Any
-
 # ---------------------------------------------------------------------------
 # Known CSV columns (used for SQL injection prevention)
 # ---------------------------------------------------------------------------
