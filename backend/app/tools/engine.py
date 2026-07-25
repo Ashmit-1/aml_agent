@@ -23,7 +23,6 @@ from app.tools.models import (
     SuspiciousPatternParams,
 )
 from app.tools.validators import (
-    KNOWN_COLUMNS,
     validate_aggregate_column,
     validate_columns,
 )
