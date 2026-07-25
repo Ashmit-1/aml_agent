@@ -19,12 +19,14 @@ from langchain_core.tools import StructuredTool
 
 from app.tools.engine import QueryEngine
 from app.tools.models import (
+    CodeSandboxParams,
     HighValueParams,
     SearchParams,
     SqlQueryParams,
     SummaryParams,
     SuspiciousPatternParams,
 )
+from app.tools.sandbox import run_code
 from app.tools.validators import get_schema_markdown
 
 # ---------------------------------------------------------------------------
@@ -245,6 +247,48 @@ def run_sql_query(
     return _get_engine().execute_sql(params)
 
 
+def run_python_code(
+    code: str,
+    timeout_seconds: int = 30,
+) -> dict[str, Any]:
+    """Write and execute Python code in a secure sandboxed environment.
+
+    Use this tool when the prebuilt tools cannot answer the user's query.
+    Examples of what you can do with code:
+    - Multi-step data analysis: query data via engine, then process it
+    - Statistical computations (mean, median, std, correlations, distributions)
+    - Advanced filtering and pattern detection beyond SQL capabilities
+    - Data transformation, normalization, feature engineering
+    - Finding accounts with specific behavioural patterns
+
+    **Available in the sandbox:**
+    - ``engine``: a ``QueryEngine`` instance to query the AML dataset.
+      Call ``engine.search_transactions(...)`` or ``engine.execute_sql(...)``
+      to get data as dicts. Then process with pandas/numpy.
+    - ``pd``: ``pandas`` for DataFrames, groupby, aggregations, merging
+    - ``np``: ``numpy`` for numerical operations
+    - ``json``, ``math``, ``re``, ``collections``, ``itertools``,
+      ``functools``, ``statistics``, ``random``, ``datetime``, etc.
+
+    **Restrictions:**
+    - No file I/O (``open``, file writes)
+    - No network access (``subprocess``, ``socket``, ``requests``, ``os``)
+    - No system commands (``os.system``, ``subprocess``)
+    - Maximum execution time: {} seconds
+    - Output truncated after 50,000 characters
+
+    **How to return results:**
+    Assign your answer to a variable named ``result`` at the end of your
+    code. The ``result`` value will be returned to the user. Use ``print()``
+    for intermediate debugging output.
+
+    Returns a dict with: success (bool), stdout (str), result (any),
+    error (str or null), truncated (bool).
+    """.format(120)
+
+    return run_code(code=code, timeout_seconds=timeout_seconds)
+
+
 # ---------------------------------------------------------------------------
 # Tool registry  –  export this list so an agent can bind it
 # ---------------------------------------------------------------------------
@@ -305,6 +349,18 @@ TOOLS: list[StructuredTool] = [
             f"schema is:\n{get_schema_markdown()}"
         ),
         args_schema=SqlQueryParams,
+    ),
+    StructuredTool.from_function(
+        name="run_python_code",
+        func=run_python_code,
+        description=(
+            "Write and execute Python code in a sandboxed environment. "
+            "Use this when the prebuilt tools cannot answer the query. "
+            "Has access to: engine (QueryEngine), pd (pandas), np (numpy), "
+            "and standard library modules. No file/network/system access. "
+            "Set `result` variable to return a value. Auto-kills on timeout."
+        ),
+        args_schema=CodeSandboxParams,
     ),
 ]
 

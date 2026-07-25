@@ -282,6 +282,33 @@ class SqlQueryParams(BaseModel):
     )
 
 
+class CodeSandboxParams(BaseModel):
+    """Parameters for the Python code sandbox tool.
+
+    Use this as a fallback when the prebuilt tools cannot answer the
+    user's query. Write arbitrary Python to perform custom analysis,
+    statistical computations, or multi-step data transformations.
+    """
+
+    code: str = Field(
+        description=(
+            "Python code to execute in the sandbox. Available variables: "
+            "`engine` (QueryEngine — call .search_transactions() or .execute_sql() "
+            "to fetch data), `pd` (pandas), `np` (numpy), plus standard library "
+            "modules (json, math, re, collections, itertools, functools, "
+            "statistics, random, datetime, typing, string). "
+            "Set a `result` variable to return a value. "
+            "Restricted: no file I/O, no network, no subprocess, no os."
+        )
+    )
+    timeout_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=120,
+        description="Maximum execution time in seconds (1–120). Default 30.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Output models
 # ---------------------------------------------------------------------------

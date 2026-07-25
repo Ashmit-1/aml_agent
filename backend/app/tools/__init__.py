@@ -28,9 +28,11 @@ from app.tools.tool_definitions import (
     get_high_value_transactions,
     get_suspicious_patterns,
     get_summary_statistics,
+    run_python_code,
     run_sql_query,
     search_transactions,
 )
+from app.tools.sandbox import run_code
 from app.tools.validators import (
     COLUMN_DESCRIPTIONS,
     COLUMN_META,
@@ -61,6 +63,9 @@ __all__ = [
     "get_suspicious_patterns",
     "get_summary_statistics",
     "run_sql_query",
+    "run_python_code",
+    # Sandbox
+    "run_code",
     # Schema helpers
     "KNOWN_COLUMNS",
     "COLUMN_META",
