@@ -19,6 +19,13 @@ from contextlib import redirect_stdout
 from typing import Any
 
 from app.tools.engine import QueryEngine
+from app.tools.models import (
+    HighValueParams,
+    SearchParams,
+    SqlQueryParams,
+    SummaryParams,
+    SuspiciousPatternParams,
+)
 
 # ---------------------------------------------------------------------------
 # Safe builtins whitelist
@@ -242,6 +249,12 @@ def run_code(
         "__name__": "__sandbox__",
         # Provide data-access objects to the sandboxed code
         "engine": engine,
+        # Pre-loaded Pydantic models for engine calls
+        "SearchParams": SearchParams,
+        "HighValueParams": HighValueParams,
+        "SuspiciousPatternParams": SuspiciousPatternParams,
+        "SummaryParams": SummaryParams,
+        "SqlQueryParams": SqlQueryParams,
     }
 
     # Pre-import allowed modules that are available
@@ -270,6 +283,7 @@ def run_code(
             "truncated": False,
         }
 
+    thread: threading.Thread | None = None
     try:
         # ── Execute in a thread with timeout ────────────────────────────
 
@@ -341,7 +355,8 @@ def run_code(
     finally:
         # Release semaphore *unless* the thread timed out and is still
         # running – in that case the slot stays occupied.
-        if not thread.is_alive():
+        # Guard against the edge case where thread creation failed.
+        if thread is not None and not thread.is_alive():
             _sandbox_semaphore.release()
 
 
