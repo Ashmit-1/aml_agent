@@ -166,22 +166,26 @@ class QueryEngine:
 
         # Build the main query
         select_cols = "*"
+        order_alias = ""  # the alias to ORDER BY when grouped
         if params.group_by:
             group_cols = ", ".join(params.group_by)
             agg_col = params.aggregate or "count"
             if agg_col == "count":
                 select_cols = f"{group_cols}, COUNT(*) AS count"
+                order_alias = "count"
             elif agg_col == "sum":
                 select_cols = f"{group_cols}, SUM(Amount) AS total_amount"
+                order_alias = "total_amount"
             elif agg_col == "avg":
                 select_cols = f"{group_cols}, AVG(Amount) AS avg_amount"
+                order_alias = "avg_amount"
 
         order_clause = ""
         if params.sort_by:
             direction = params.sort_order or "DESC"
             order_clause = f" ORDER BY {params.sort_by} {direction}"
-        elif params.group_by:
-            order_clause = " ORDER BY count DESC"
+        elif params.group_by and order_alias:
+            order_clause = f" ORDER BY {order_alias} DESC"
 
         group_clause = ""
         if params.group_by:
@@ -284,10 +288,13 @@ class QueryEngine:
 
         if params.aggregate == "count":
             select_cols = f"{group_cols}, COUNT(*) AS count"
+            order_alias = "count"
         elif params.aggregate == "sum":
             select_cols = f"{group_cols}, SUM({agg_col}) AS total_amount"
+            order_alias = "total_amount"
         else:  # avg
             select_cols = f"{group_cols}, AVG({agg_col}) AS avg_amount"
+            order_alias = "avg_amount"
 
         where_clauses: list[str] = []
         values: list[Any] = []
@@ -308,7 +315,7 @@ class QueryEngine:
         sql = (
             f"SELECT {select_cols} FROM transactions{where}"
             f" GROUP BY {group_cols}"
-            " ORDER BY count DESC"
+            f" ORDER BY {order_alias} DESC"
             " LIMIT ?"
         )
         values.append(params.limit)
