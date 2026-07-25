@@ -16,6 +16,39 @@ import duckdb
 from pydantic import BaseModel, Field
 
 
+__all__ = [
+    "SearchParams",
+    "HighValueParams",
+    "SuspiciousPatternParams",
+    "SummaryParams",
+    "Transaction",
+    "PaginatedResult",
+    "SummaryResult",
+    "QueryEngine",
+    "KNOWN_COLUMNS",
+]
+
+
+# ---------------------------------------------------------------------------
+# Known CSV columns (used for SQL injection prevention)
+# ---------------------------------------------------------------------------
+
+KNOWN_COLUMNS: frozenset[str] = frozenset({
+    "Time",
+    "Date",
+    "Sender_account",
+    "Receiver_account",
+    "Amount",
+    "Payment_currency",
+    "Received_currency",
+    "Sender_bank_location",
+    "Receiver_bank_location",
+    "Payment_type",
+    "Is_laundering",
+    "Laundering_type",
+})
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models – tool inputs
 # ---------------------------------------------------------------------------
@@ -74,7 +107,7 @@ class HighValueParams(BaseModel):
 class SuspiciousPatternParams(BaseModel):
     """Parameters for AML pattern detection."""
 
-    min_amount: Optional[float] = Field(default=None, ge=0)
+    min_amount: float = Field(default=5_000.0, ge=0)
     max_amount: Optional[float] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
@@ -131,7 +164,7 @@ class SummaryResult(BaseModel):
     """Aggregation/summary result."""
 
     rows: list[dict[str, Any]]
-    total_count: int
+    returned_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -226,11 +259,26 @@ class QueryEngine:
     # Public tool methods
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _validate_columns(names: list[str]) -> None:
+        """Raise ValueError if any column name is not in KNOWN_COLUMNS."""
+        for name in names:
+            if name not in KNOWN_COLUMNS:
+                raise ValueError(
+                    f"Unknown column '{name}'. Valid columns: {sorted(KNOWN_COLUMNS)}"
+                )
+
     def search_transactions(self, params: SearchParams) -> PaginatedResult:
         """
         Composite search tool – apply all provided filters and return
         paginated, optionally grouped/aggregated results.
         """
+        # Validate dynamic column references against the known set
+        if params.group_by:
+            self._validate_columns(params.group_by)
+        if params.sort_by:
+            self._validate_columns([params.sort_by])
+
         where, values = self._build_where(params)
 
         # Count total matching rows (without group/limit/offset)
@@ -327,8 +375,15 @@ class QueryEngine:
         Aggregated statistics grouped by a dimension (e.g. currency,
         location, date, laundering type).
         """
+        self._validate_columns(params.group_by)
+        if params.aggregate_column not in KNOWN_COLUMNS:
+            raise ValueError(
+                f"Unknown column '{params.aggregate_column}' for aggregation. "
+                f"Valid columns: {sorted(KNOWN_COLUMNS)}"
+            )
+
         group_cols = ", ".join(params.group_by)
-        agg_col = params.aggregate_column or "Amount"
+        agg_col = params.aggregate_column
 
         if params.aggregate == "count":
             select_cols = f"{group_cols}, COUNT(*) AS count"
@@ -366,5 +421,5 @@ class QueryEngine:
 
         return SummaryResult(
             rows=[dict(zip(columns, row)) for row in rows],
-            total_count=len(rows),
+            returned_count=len(rows),
         )
