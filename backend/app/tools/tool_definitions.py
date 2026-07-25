@@ -42,6 +42,18 @@ def _get_engine() -> QueryEngine:
     return _engine
 
 
+def close_engine() -> None:
+    """Explicitly close the singleton engine connection (if open)."""
+    global _engine
+    if _engine is not None:
+        _engine.close()
+        _engine = None
+
+
+import atexit
+atexit.register(close_engine)
+
+
 # ---------------------------------------------------------------------------
 # Tool-callable functions
 # ---------------------------------------------------------------------------

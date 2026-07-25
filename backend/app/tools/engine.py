@@ -26,8 +26,6 @@ from app.tools.models import (
     SuspiciousPatternParams,
 )
 from app.tools.validators import (
-    KNOWN_COLUMNS,
-    get_schema_markdown,
     validate_aggregate_column,
     validate_columns,
     validate_sql_select,
@@ -153,9 +151,7 @@ class QueryEngine:
         - Queries involving date ranges, amount thresholds, currencies,
           locations, accounts, payment types, or laundering status.
         - Simple aggregations like "how many transactions" or "total volume".
-
-        **Dataset schema (``transactions`` view):**
-        """ + get_schema_markdown()
+        """
         # Validate dynamic column references against the known set
         if params.group_by:
             validate_columns(params.group_by)
@@ -341,9 +337,7 @@ class QueryEngine:
         - Only ``SELECT`` statements are allowed (enforced by validator).
         - Column references are validated against the known schema.
         - A ``LIMIT`` is always applied (default 500, max 10 000).
-
-        **Dataset schema (``transactions`` view):**
-        """ + get_schema_markdown()
+        """
 
         safe_sql = validate_sql_select(params.sql)
 

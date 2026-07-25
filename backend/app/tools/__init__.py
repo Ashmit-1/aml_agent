@@ -23,7 +23,14 @@ from app.tools.models import (
     SuspiciousPatternParams,
     Transaction,
 )
-from app.tools.tool_definitions import TOOLS, get_suspicious_patterns, get_summary_statistics, run_sql_query, search_transactions
+from app.tools.tool_definitions import (
+    TOOLS,
+    get_high_value_transactions,
+    get_suspicious_patterns,
+    get_summary_statistics,
+    run_sql_query,
+    search_transactions,
+)
 from app.tools.validators import (
     COLUMN_DESCRIPTIONS,
     COLUMN_META,
@@ -50,6 +57,7 @@ __all__ = [
     # LangChain-compatible tool definitions
     "TOOLS",
     "search_transactions",
+    "get_high_value_transactions",
     "get_suspicious_patterns",
     "get_summary_statistics",
     "run_sql_query",
