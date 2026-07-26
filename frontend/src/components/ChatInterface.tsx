@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { 
   Brain, 
   Search, 
@@ -212,27 +213,33 @@ export const ChatInterface = () => {
           
           if (stepData.type === 'response') {
             finalAssistantContent = stepData.content;
-            setMessages(prev => {
-              const updated = [...prev];
-              if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = stepData.content;
-              return updated;
+            flushSync(() => {
+              setMessages(prev => {
+                const updated = [...prev];
+                if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = stepData.content;
+                return updated;
+              });
             });
           } else {
             accumulatedSteps.push(stepData);
-            setMessages(prev => {
-              const updated = [...prev];
-              if (updated[assistantMsgIndex]) {
-                updated[assistantMsgIndex].steps = [...(updated[assistantMsgIndex].steps || []), stepData];
-              }
-              return updated;
+            flushSync(() => {
+              setMessages(prev => {
+                const updated = [...prev];
+                if (updated[assistantMsgIndex]) {
+                  updated[assistantMsgIndex].steps = [...(updated[assistantMsgIndex].steps || []), stepData];
+                }
+                return updated;
+              });
             });
           }
         } else if (event.type === 'error') {
           finalAssistantContent = `**Error:** ${event.data.message}`;
-          setMessages(prev => {
-            const updated = [...prev];
-            if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = finalAssistantContent;
-            return updated;
+          flushSync(() => {
+            setMessages(prev => {
+              const updated = [...prev];
+              if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = finalAssistantContent;
+              return updated;
+            });
           });
           break;
         }
