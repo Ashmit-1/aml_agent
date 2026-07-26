@@ -204,10 +204,10 @@ rm ~/Downloads/synthetic-transaction-monitoring-dataset-aml.zip
 
 The expected file path:
 ```
-backend/app/data/transactions.csv
+backend/app/data/SAML-D.csv
 ```
 
-**Note:** Verify the extracted CSV filename matches `transactions.csv`. If the Kaggle download extracts a differently named file, either rename it or update the filename in `backend/app/tools/engine.py`.
+**Note:** Verify the extracted CSV filename matches `SAML-D.csv`. If the Kaggle download extracts a differently named file, either rename it or update the filename in `backend/app/tools/engine.py`.
 
 ---
 
@@ -737,11 +737,6 @@ curl http://localhost:8000/api/health
 
 If `agent_ready` is `false`, send a chat request to initialize the agent.
 
----
-
-## License
-
-[Add your license here]
 
 ---
 
