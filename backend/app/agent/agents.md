@@ -98,12 +98,32 @@ Defined in `app/agent/state.py`:
 
 ### 2. `tools` — Tool Execution Node
 
-**Implementation:** `langgraph.prebuilt.ToolNode`
+**Implementation:** `langgraph.prebuilt.ToolNode` with custom error handler
 
 - Receives the LLM's `tool_calls` from the last `AIMessage`
 - Executes **all** tool calls in parallel
-- Returns `ToolMessage` results back into the message list
-- Tools are expected to **return error strings** rather than raising exceptions (the sandbox's `run_code` already does this)
+- Uses a custom ``_tool_error_handler()`` that catches any exception raised by a tool
+  and returns it as a structured error message (e.g. ``Tool error (CatalogException): ...``)
+  instead of crashing the agent.
+- Returns ``ToolMessage`` results back into the message list
+
+**ToolNode error handler (in ``graph.py``):**
+
+```python
+def _tool_error_handler(error: Exception) -> str:
+    """Catches tool exceptions and returns structured error messages
+    instead of crashing the agent loop."""
+    return f"Tool error ({type(error).__name__}): {error}"
+```
+
+This catches exceptions from tools like:
+- DuckDB ``CatalogException`` (invalid SQL table name)
+- DuckDB ``BinderException`` (invalid column name)
+- ``ValueError`` from validators (disallowed SQL, unknown columns)
+- Sandbox ``RuntimeError`` (thread start failures)
+
+Without this handler, such exceptions would propagate up through LangGraph and
+crash the entire agent invocation with an unhandled exception.
 
 ### 3. `check_error` — Error Detection & Retry Management
 
@@ -118,9 +138,13 @@ Defined in `app/agent/state.py`:
 **Error detection** uses specific phrase matching (not a generic "error" keyword, to avoid false positives from data values):
 
 ```
-"only select queries", "multi-statement",
-"unknown column", "failed to start",
-"timed out", "too many concurrent"
+"tool error",          # DuckDB exceptions, runtime errors from ToolNode handler
+"only select queries", # SQL validation
+"multi-statement",     # Multi-statement SQL rejection
+"unknown column",      # Column validation
+"failed to start",     # Sandbox thread failure
+"timed out",           # Sandbox execution timeout
+"too many concurrent"  # Sandbox concurrency limit
 ```
 
 **Routing node:** `_route_after_check_error()` — a conditional edge that checks `retry_count > _MAX_RETRIES` and routes to `END` when exceeded, breaking the agent loop gracefully.
