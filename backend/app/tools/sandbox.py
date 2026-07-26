@@ -92,10 +92,14 @@ _SAFE_BUILTINS: dict[str, Any] = {
     "AssertionError": AssertionError,
     "AttributeError": AttributeError,
     "Exception": Exception,
+    "FileNotFoundError": FileNotFoundError,
     "IndexError": IndexError,
     "KeyError": KeyError,
     "LookupError": LookupError,
+    "NotImplementedError": NotImplementedError,
+    "OSError": OSError,
     "OverflowError": OverflowError,
+    "PermissionError": PermissionError,
     "RuntimeError": RuntimeError,
     "StopIteration": StopIteration,
     "TypeError": TypeError,
@@ -297,7 +301,16 @@ def run_code(
         )
 
         with redirect_stdout(stdout_buf):
-            thread.start()
+            try:
+                thread.start()
+            except RuntimeError as exc:
+                return {
+                    "success": False,
+                    "stdout": "",
+                    "result": None,
+                    "error": f"Failed to start sandbox thread: {exc}",
+                    "truncated": False,
+                }
             thread.join(timeout=timeout_seconds)
 
         # ── Collect output ─────────────────────────────────────────────
@@ -353,10 +366,9 @@ def run_code(
         }
 
     finally:
-        # Release semaphore *unless* the thread timed out and is still
-        # running – in that case the slot stays occupied.
-        # Guard against the edge case where thread creation failed.
-        if thread is not None and not thread.is_alive():
+        # Always release the semaphore so the sandbox doesn't permanently
+        # deadlock after timeouts. Daemon threads are cleaned up on exit.
+        if thread is not None:
             _sandbox_semaphore.release()
 
 
