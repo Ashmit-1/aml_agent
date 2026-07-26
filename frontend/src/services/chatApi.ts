@@ -1,4 +1,4 @@
-import { Conversation, ChatMessage } from '../types';
+import type { ChatMessage } from '../types';
 
 export const chatService = {
   async getHealth() {

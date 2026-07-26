@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react';
 import { 
   Brain, 
   Search, 
@@ -9,13 +9,14 @@ import {
   Terminal, 
   CheckCircle2, 
   AlertTriangle, 
-  MessageSquare, 
   Send, 
   User, 
   Bot, 
   Loader2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Menu,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,10 +27,10 @@ import remarkGfm from 'remark-gfm';
 import { useChatStore } from '@/store/chatStore';
 import { storage } from '@/services/storage';
 import { chatService } from '@/services/chatApi';
-import { ChatMessage } from '@/types';
+
 import { cn } from '@/lib/utils';
 
-const TOOL_ICONS: Record<string, React.ReactNode> = {
+const TOOL_ICONS: Record<string, ReactNode> = {
   search_transactions: <Search size={16} />,
   get_high_value_transactions: <TrendingUp size={16} />,
   get_suspicious_patterns: <ShieldAlert size={16} />,
@@ -118,9 +119,11 @@ const ChatBubble = ({ role, content, steps }: { role: 'user' | 'assistant', cont
               ? "bg-white text-black rounded-tr-none" 
               : "bg-black border border-white text-white rounded-tl-none"
           )}>
-            <ReactMarkdown remarkGfm className="prose prose-invert max-w-none text-inherit">
-              {content}
-            </ReactMarkdown>
+            <div className="prose prose-invert max-w-none text-inherit">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {content}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       </div>
@@ -132,18 +135,22 @@ export const ChatInterface = () => {
   const { 
     activeConversationId, 
     setActiveConversation, 
-    refreshConversations 
+    refreshConversations,
+    sidebarOpen,
+    setSidebarOpen
   } = useChatStore();
   
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isStreamingRef = useRef(false);
 
   useEffect(() => {
+    if (isStreamingRef.current) return; // Don't overwrite during active streaming
     if (activeConversationId) {
       storage.getConversation(activeConversationId).then(conv => {
-        if (conv) setMessages(conv.messages);
+        if (conv && conv.messages) setMessages(conv.messages);
       });
     } else {
       setMessages([]);
@@ -154,22 +161,24 @@ export const ChatInterface = () => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async (e: React.FormEvent) => {
+  const handleSend = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isTyping) return;
 
     const userMsg = input.trim();
     setInput("");
     setIsTyping(true);
+    isStreamingRef.current = true;
 
     let currentConvId = activeConversationId;
     let conversation: any = null;
+    let accumulatedSteps: any[] = [];
 
     try {
       if (!currentConvId) {
         conversation = await storage.createConversation(userMsg);
         currentConvId = conversation.id;
-        setActiveConversation(currentConvId);
+        // Defer setActiveConversation until after streaming to prevent useEffect race
       } else {
         conversation = await storage.getConversation(currentConvId);
         if (!conversation) throw new Error("Conversation not found");
@@ -182,7 +191,7 @@ export const ChatInterface = () => {
       setMessages(conversation.messages);
 
       const history = conversation.messages
-        .slice(0, -1) // All except the very last user message (backend wants it in 'message' field)
+        .slice(0, -1)
         .map((m: any) => ({ role: m.role, content: m.content }));
 
       const stream = chatService.streamChat(userMsg, history);
@@ -196,7 +205,6 @@ export const ChatInterface = () => {
       }]);
 
       let finalAssistantContent = '';
-      let finalSteps: any[] = [];
 
       for await (const event of stream) {
         if (event.type === 'step') {
@@ -210,7 +218,7 @@ export const ChatInterface = () => {
               return updated;
             });
           } else {
-            finalSteps.push(stepData);
+            accumulatedSteps.push(stepData);
             setMessages(prev => {
               const updated = [...prev];
               if (updated[assistantMsgIndex]) {
@@ -230,15 +238,26 @@ export const ChatInterface = () => {
         }
       }
 
-      // PERSISTENCE: Save final state after stream completion
+      // PERSISTENCE: Save assistant message with ALL steps to IndexedDB
       conversation.messages.push({ 
         role: 'assistant' as const, 
-        content: finalAssistantContent || 'No response received.' 
+        content: finalAssistantContent || 'No response received.',
+        steps: accumulatedSteps
       });
       await storage.saveConversation(conversation);
+
+      // Now set the active conversation so the sidebar shows the right highlight
+      // (deferred to prevent useEffect from clearing streaming state)
+      if (!activeConversationId) {
+        setActiveConversation(currentConvId);
+      }
       
     } catch (err: any) {
-      const errorMsg = { role: 'assistant' as const, content: `Error: ${err.message}` };
+      const errorMsg = { 
+        role: 'assistant' as const, 
+        content: `Error: ${err.message}`,
+        steps: []
+      };
       setMessages(prev => [...prev, errorMsg]);
       
       if (conversation && currentConvId) {
@@ -246,6 +265,7 @@ export const ChatInterface = () => {
         await storage.saveConversation(conversation);
       }
     } finally {
+      isStreamingRef.current = false;
       setIsTyping(false);
       refreshConversations();
     }
@@ -253,19 +273,36 @@ export const ChatInterface = () => {
 
   return (
     <div className="flex flex-col h-screen bg-black text-white">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      
+      {/* Mobile hamburger button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="fixed top-4 left-4 z-50 md:hidden flex items-center justify-center h-9 w-9 rounded-md border border-white/20 bg-black text-white hover:bg-gray-900 transition-colors"
+        aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+      >
+        {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+      </button>
+
       <div className="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full">
         <ScrollArea className="flex-1 p-4 overflow-y-auto">
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
               <div className="h-16 w-16 rounded-full border border-white flex items-center justify-center mb-4">
                 <Bot size={32} />
-              </div_
+              </div>
               <h1 className="text-2xl font-medium">Agent Intelligence</h1>
               <p className="text-gray-500 max-w-md">
                 Ask me about the dataset. I can search transactions, 
                 analyze patterns, and run Python code to find answers.
               </p>
-            </div_
+            </div>
           )}
           {messages.map((msg, idx) => (
             <ChatBubble key={idx} role={msg.role} content={msg.content} steps={msg.steps} />
@@ -292,8 +329,8 @@ export const ChatInterface = () => {
               {isTyping ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
             </Button>
           </form>
-        </div_
-      </div_
-    </div_
+        </div>
+      </div>
+    </div>
   );
 };

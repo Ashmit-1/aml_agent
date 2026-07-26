@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { 
   Plus, 
   MessageSquare, 
   Trash2, 
   Edit2, 
-  Menu, 
-  X, 
-  PanelLeftClose, 
-  PanelLeftOpen 
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/store/chatStore';
@@ -19,22 +17,21 @@ export const Sidebar = () => {
     conversations, 
     activeConversationId, 
     setActiveConversation, 
-    setConversations, 
-    refreshConversations 
+    refreshConversations,
+    sidebarOpen,
+    setSidebarOpen
   } = useChatStore();
   
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  const handleNewChat = async () => {
-    // This will be handled by the main chat area to trigger first message,
-    // but we can just clear the active session here.
+  const handleNewChat = () => {
     setActiveConversation(null);
+    setSidebarOpen(false);
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: MouseEvent, id: string) => {
     e.stopPropagation();
     await storage.deleteConversation(id);
     await refreshConversations();
@@ -59,7 +56,7 @@ export const Sidebar = () => {
       "fixed left-0 top-0 h-screen bg-black border-r border-white transition-all duration-200 z-40",
       isCollapsed ? "w-0 overflow-hidden border-r-0" : "w-64",
       "md:relative md:translate-x-0",
-      isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+      sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
     )}>
       <div className="flex flex-col h-full p-4">
         <Button 
@@ -83,7 +80,10 @@ export const Sidebar = () => {
           {conversations.map((conv) => (
             <div 
               key={conv.id}
-              onClick={() => setActiveConversation(conv.id)}
+              onClick={() => {
+                setActiveConversation(conv.id);
+                setSidebarOpen(false);
+              }}
               className={cn(
                 "group relative flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors",
                 activeConversationId === conv.id ? "bg-gray-900" : "hover:bg-gray-900"
@@ -126,6 +126,14 @@ export const Sidebar = () => {
           ))}
         </div>
       </div>
+      {/* Collapse toggle for desktop */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute -right-3 top-1/2 -translate-y-1/2 hidden md:flex items-center justify-center w-6 h-6 rounded-full border border-white/20 bg-black text-gray-400 hover:text-white hover:border-white/50 transition-colors z-50"
+        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {isCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
+      </button>
     </div>
   );
 };

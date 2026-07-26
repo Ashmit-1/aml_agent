@@ -1,5 +1,5 @@
 import localforage from 'localforage';
-import { Conversation, ConversationSummary } from '../types';
+import type { Conversation, ConversationSummary } from '../types';
 
 const STORE_KEYS = {
   INDEX: 'conversation:index',

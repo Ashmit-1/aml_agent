@@ -4,3 +4,5 @@ backend/.env
 *.pyc
 frontend/design.md
 backend/design.md
+backend/backend.md
+frontend/backend.md
