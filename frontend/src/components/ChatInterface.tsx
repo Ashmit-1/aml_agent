@@ -41,7 +41,7 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 };
 
 const ToolStep = ({ event }: { event: any }) => {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(event.type !== 'thinking');
   
   const __icon = event.type === 'tool_call' 
     ? (TOOL_ICONS[event.tool] || <Search size={16} />) 
@@ -96,6 +96,16 @@ const ThinkingDots = () => (
   </div>
 );
 
+const SkeletonCard = () => (
+  <div className="w-full rounded-md border border-gray-800 bg-black p-3 animate-pulse">
+    <div className="flex items-center gap-2 mb-2">
+      <div className="h-4 w-4 rounded bg-gray-800" />
+      <div className="h-3 w-24 rounded bg-gray-800" />
+    </div>
+    <div className="h-3 w-full rounded bg-gray-800/60" />
+  </div>
+);
+
 const ChatBubble = ({ role, content, steps, isTyping }: { role: 'user' | 'assistant', content: string, steps?: any[], isTyping?: boolean }) => {
   const isWaitingForFirstEvent = role === 'assistant' && !content && (!steps || steps.length === 0) && isTyping;
 
@@ -116,25 +126,32 @@ const ChatBubble = ({ role, content, steps, isTyping }: { role: 'user' | 'assist
         </div>
         
         <div className="flex flex-col gap-3">
-          {steps && steps.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {steps.map((step, idx) => (
-                <ToolStep key={idx} event={step} />
-              ))}
+          {isWaitingForFirstEvent ? (
+            /* Show skeleton cards while waiting for the first SSE event */
+            <div className="flex flex-col gap-2 animate-fade-in">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
+          ) : (
+            steps && steps.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {steps.map((step, idx) => (
+                  <ToolStep key={idx} event={step} />
+                ))}
+              </div>
+            )
           )}
           
           <div className={cn(
             "p-3 rounded-md text-sm",
             role === 'user' 
               ? "bg-white text-black rounded-tr-none" 
-              : "bg-black border border-white text-white rounded-tl-none",
-            isWaitingForFirstEvent && "flex items-center gap-2 min-h-[36px]"
+              : "bg-black border border-white text-white rounded-tl-none"
           )}>
-            {isWaitingForFirstEvent ? (
+            {role === 'assistant' && !content && !isWaitingForFirstEvent ? (
+              /* No content yet but steps are present (between events) - show dots */
               <div className="flex items-center gap-2 text-gray-400">
-                <Bot size={14} className="animate-pulse" />
-                <span className="text-xs">Agent is thinking</span>
                 <ThinkingDots />
               </div>
             ) : (
@@ -232,20 +249,48 @@ export const ChatInterface = () => {
           
           if (stepData.type === 'response') {
             finalAssistantContent = stepData.content;
-            flushSync(() => {
-              setMessages(prev => {
-                const updated = [...prev];
-                if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = stepData.content;
-                return updated;
-              });
-            });
-          } else {
-            accumulatedSteps.push(stepData);
+            // Also remove the last thinking step from accumulatedSteps
+            // so the duplicate doesn't get saved to IndexedDB
+            const lastAccIdx = accumulatedSteps.length - 1;
+            if (lastAccIdx >= 0 && accumulatedSteps[lastAccIdx].type === 'thinking') {
+              accumulatedSteps = accumulatedSteps.slice(0, lastAccIdx);
+            }
             flushSync(() => {
               setMessages(prev => {
                 const updated = [...prev];
                 if (updated[assistantMsgIndex]) {
-                  updated[assistantMsgIndex].steps = [...(updated[assistantMsgIndex].steps || []), stepData];
+                  const existingSteps = updated[assistantMsgIndex].steps || [];
+                  // Remove the LAST thinking step — it contains the reasoning
+                  // that led to the final answer and would render as a duplicate
+                  const lastIdx = existingSteps.length - 1;
+                  const newSteps = lastIdx >= 0 && existingSteps[lastIdx].type === 'thinking'
+                    ? existingSteps.slice(0, lastIdx)
+                    : existingSteps;
+                  updated[assistantMsgIndex].steps = newSteps;
+                  updated[assistantMsgIndex].content = stepData.content;
+                }
+                return updated;
+              });
+            });
+          } else {
+            // Only push to accumulatedSteps if not already present (dedup)
+            const stepKey = JSON.stringify(stepData);
+            if (!accumulatedSteps.some(s => JSON.stringify(s) === stepKey)) {
+              accumulatedSteps.push(stepData);
+            }
+            flushSync(() => {
+              setMessages(prev => {
+                const updated = [...prev];
+                if (updated[assistantMsgIndex]) {
+                  const existingSteps = updated[assistantMsgIndex].steps || [];
+                  // Check if this step is already in the array before appending
+                  const alreadyExists = existingSteps.some(
+                    (s: any) => JSON.stringify(s) === stepKey
+                  );
+                  if (!alreadyExists) {
+                    updated[assistantMsgIndex].steps = [...existingSteps, stepData];
+                  }
+                  return updated;
                 }
                 return updated;
               });
@@ -315,6 +360,17 @@ export const ChatInterface = () => {
       >
         {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
       </button>
+
+      {/* Persistent top bar with agent logo */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+        <div className="h-8 w-8 rounded-full border border-white flex items-center justify-center">
+          <Bot size={16} />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm font-medium">Agent Intelligence</span>
+          <span className="text-xs text-gray-500">Ask me anything about the data</span>
+        </div>
+      </div>
 
       <div className="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full">
         <ScrollArea className="flex-1 p-4 overflow-y-auto">
