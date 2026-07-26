@@ -41,6 +41,13 @@ from app.agent.config import LLMConfig, get_llm
 from app.agent.state import AgentState
 from app.tools.tool_definitions import TOOLS as PREDEFINED_TOOLS
 
+
+def _tool_error_handler(error: Exception) -> str:
+    """Custom ToolNode error handler — catches tool exceptions and returns
+    them as structured error messages instead of crashing the agent."""
+    name = type(error).__name__
+    return f"Tool error ({name}): {error}"
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -81,6 +88,7 @@ def _is_error_message(msg: BaseMessage) -> bool:
     return any(
         keyword in content
         for keyword in (
+            "tool error",
             "only select queries",
             "multi-statement",
             "unknown column",
@@ -210,7 +218,7 @@ def build_agent(
     workflow = StateGraph(AgentState)
 
     workflow.add_node("agent", _make_agent_node(llm, tools))
-    workflow.add_node("tools", ToolNode(tools))
+    workflow.add_node("tools", ToolNode(tools, handle_tool_errors=_tool_error_handler))
     workflow.add_node("check_error", _check_error_node)
 
     workflow.add_edge(START, "agent")
