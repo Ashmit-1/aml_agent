@@ -116,7 +116,7 @@ The stream emits several **`event: step`** lines followed by a terminal **`event
 
 | Step type       | When it fires                                                                 | Data fields                                        |
 |-----------------|-------------------------------------------------------------------------------|----------------------------------------------------|
-| `thinking`      | The LLM is reasoning / planning.                                             | `content` (text), optional `next` ("tool_call")    |
+| `thinking`      | The LLM is reasoning / planning.                                             | `content` (text)                                      |
 | `tool_call`     | The LLM decided to invoke a tool.                                            | `tool` (name), `arguments` (object)                |
 | `tool_result`   | A tool returned a result.                                                    | `tool` (name), `summary` (truncated result string) |
 | `retry`         | A tool errored and the agent is retrying (or giving up).                     | `retry_count`, `reason` (text)                     |
