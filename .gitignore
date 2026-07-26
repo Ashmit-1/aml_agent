@@ -2,3 +2,5 @@ backend/.venv
 backend/.env
 *.csv
 *.pyc
+frontend/design.md
+backend/design.md

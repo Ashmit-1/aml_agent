@@ -75,4 +75,5 @@ async def root() -> dict:
         "docs": "/docs",
         "health": "/api/health",
         "chat": "/api/chat",
+        "chat_stream": "/api/chat/stream",
     }
