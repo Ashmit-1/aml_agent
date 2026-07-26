@@ -42,6 +42,7 @@ _SAFE_BUILTINS: dict[str, Any] = {
     "any": any,
     "bin": bin,
     "bool": bool,
+    "__build_class__": __build_class__,
     "bytes": bytes,
     "chr": chr,
     "complex": complex,
