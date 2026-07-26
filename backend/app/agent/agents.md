@@ -36,13 +36,19 @@ The agent is a directed graph with three nodes and conditional routing:
               │    check_error        │
               │  - Inspects results    │
               │  - Updates retry_count │
-              │  - May inject hint     │
+              │  - Injects hint or     │
+              │    exceeds-msg on fail │
               └───────────┬───────────┘
                           │
-                          └─────────► back to agent (loop continues)
+              ┌───────────┴───────────┐
+              │                       │
+     retry_count <= MAX          retry_count > MAX
+              │                       │
+              ▼                       ▼
+         agent (loop)              END (give up)
 ```
 
-The graph loops until the LLM decides to produce a final answer (no more tool calls), or the `recursion_limit` of 25 is reached.
+The graph loops until the LLM decides to produce a final answer (no more tool calls), the `retry_count` exceeds the maximum (graceful termination with a message to the user), or the `recursion_limit` of 25 is reached (safety net).
 
 ---
 
@@ -103,18 +109,21 @@ Defined in `app/agent/state.py`:
 
 **Function:** `_check_error_node()` in `graph.py`
 
-- Inspects the last `ToolMessage` for error keywords
+- Inspects the last `ToolMessage` for specific error phrases (see below)
 - **On success:** resets `retry_count` to `0`
 - **On error with retry_count < 3:** increments `retry_count`, routes back to `agent` — the LLM sees the error and can correct itself
-- **On error with retry_count >= 3:** injects a `SystemMessage` with the sandbox fallback hint, then routes back to `agent`
+- **On error with retry_count == 3:** injects a `SystemMessage` with the sandbox fallback hint, then routes back to `agent`
+- **On error with retry_count > 3:** returns a graceful `_MAX_RETRY_EXCEEDED_MSG` to the user and routes to `END` (prevents infinite looping)
 
-**Error detection** uses keyword matching on the tool result content:
+**Error detection** uses specific phrase matching (not a generic "error" keyword, to avoid false positives from data values):
 
 ```
-"error", "only select queries", "multi-statement",
-"unknown column", "failed to start", "timed out",
-"too many concurrent", "no results returned"
+"only select queries", "multi-statement",
+"unknown column", "failed to start",
+"timed out", "too many concurrent"
 ```
+
+**Routing node:** `_route_after_check_error()` — a conditional edge that checks `retry_count > _MAX_RETRIES` and routes to `END` when exceeded, breaking the agent loop gracefully.
 
 ---
 
@@ -126,9 +135,10 @@ Defined in `app/agent/state.py`:
 | `agent` | LLM produced `tool_calls` | `tools` | Execute tools |
 | `agent` | LLM produced text (no tool_calls) | `END` | Return final answer |
 | `tools` | always | `check_error` | Inspect results |
-| `check_error` | always | `agent` | Continue loop (LLM decides next step) |
+| `check_error` | `retry_count <= 3` | `agent` | Continue loop (LLM decides next step) |
+| `check_error` | `retry_count > 3` | `END` | Graceful termination (max retries exceeded) |
 
-The `recursion_limit=25` on `workflow.compile()` prevents infinite loops. This allows up to ~12 tool-call cycles before the graph raises a `GraphRecursionError`.
+The `recursion_limit=25` on `workflow.compile()` acts as a safety net for unexpected infinite loops (e.g., the LLM making successful tool calls without ever producing a final answer). Under normal conditions, the agent terminates gracefully when `retry_count > _MAX_RETRIES`.
 
 ---
 
