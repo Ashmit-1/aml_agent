@@ -274,7 +274,7 @@ def run_python_code(
     - No file I/O (``open``, file writes)
     - No network access (``subprocess``, ``socket``, ``requests``, ``os``)
     - No system commands (``os.system``, ``subprocess``)
-    - Maximum execution time: {} seconds
+    - Maximum execution time: 120 seconds
     - Output truncated after 50,000 characters
 
     **How to return results:**
@@ -284,7 +284,7 @@ def run_python_code(
 
     Returns a dict with: success (bool), stdout (str), result (any),
     error (str or null), truncated (bool).
-    """.format(120)
+    """
 
     return run_code(
         code=code,
