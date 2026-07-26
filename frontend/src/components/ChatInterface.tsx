@@ -88,7 +88,17 @@ const ToolStep = ({ event }: { event: any }) => {
   );
 };
 
-const ChatBubble = ({ role, content, steps }: { role: 'user' | 'assistant', content: string, steps?: any[] }) => {
+const ThinkingDots = () => (
+  <div className="flex items-center gap-1.5 py-1">
+    <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '0ms' }} />
+    <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '200ms' }} />
+    <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '400ms' }} />
+  </div>
+);
+
+const ChatBubble = ({ role, content, steps, isTyping }: { role: 'user' | 'assistant', content: string, steps?: any[], isTyping?: boolean }) => {
+  const isWaitingForFirstEvent = role === 'assistant' && !content && (!steps || steps.length === 0) && isTyping;
+
   return (
     <div className={cn(
       "flex w-full gap-4 mb-6", 
@@ -118,13 +128,22 @@ const ChatBubble = ({ role, content, steps }: { role: 'user' | 'assistant', cont
             "p-3 rounded-md text-sm",
             role === 'user' 
               ? "bg-white text-black rounded-tr-none" 
-              : "bg-black border border-white text-white rounded-tl-none"
+              : "bg-black border border-white text-white rounded-tl-none",
+            isWaitingForFirstEvent && "flex items-center gap-2 min-h-[36px]"
           )}>
-            <div className="prose prose-invert max-w-none text-inherit">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {content}
-              </ReactMarkdown>
-            </div>
+            {isWaitingForFirstEvent ? (
+              <div className="flex items-center gap-2 text-gray-400">
+                <Bot size={14} className="animate-pulse" />
+                <span className="text-xs">Agent is thinking</span>
+                <ThinkingDots />
+              </div>
+            ) : (
+              <div className="prose prose-invert max-w-none text-inherit">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {content}
+                </ReactMarkdown>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -312,7 +331,7 @@ export const ChatInterface = () => {
             </div>
           )}
           {messages.map((msg, idx) => (
-            <ChatBubble key={idx} role={msg.role} content={msg.content} steps={msg.steps} />
+            <ChatBubble key={idx} role={msg.role} content={msg.content} steps={msg.steps} isTyping={isTyping} />
           ))}
           <div ref={scrollRef} />
         </ScrollArea>
