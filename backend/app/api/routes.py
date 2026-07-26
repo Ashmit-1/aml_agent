@@ -91,7 +91,19 @@ def chat(request: ChatRequest) -> ChatResponse:  # sync — agent.invoke() is bl
     # ── Build the response ────────────────────────────────────────────────
     final_messages = result.get("messages", [])
     last_msg = final_messages[-1] if final_messages else None
-    response_text = str(last_msg.content) if last_msg else "No response."
+
+    # Extract clean text from the last message, handling multi-block content
+    # (e.g. Gemma/Gemini models that return thinking + text blocks)
+    if last_msg is None:
+        response_text = "No response."
+    elif isinstance(last_msg.content, list):
+        texts: list[str] = []
+        for block in last_msg.content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                texts.append(block.get("text", ""))
+        response_text = "\n".join(texts) or str(last_msg.content)
+    else:
+        response_text = str(last_msg.content or "")
 
     # Extract tool calls made during the conversation
     tool_calls: list[dict[str, Any]] = []
