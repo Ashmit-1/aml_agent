@@ -34,13 +34,11 @@ import logging
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from app.agent.config import LLMConfig, get_llm
 from app.agent.state import AgentState
-from app.tools.sandbox import run_code
 from app.tools.tool_definitions import TOOLS as PREDEFINED_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -165,30 +163,9 @@ def build_agent(
     """
     # ── Assemble the tool list ──────────────────────────────────────────
     if tools is None:
-
-        @tool
-        def run_python_code(
-            code: str,
-            timeout_seconds: int = 30,
-        ) -> dict[str, Any]:
-            """Write and execute Python code in a secure sandboxed environment.
-
-            Use this tool when the prebuilt tools cannot answer the user's
-            query. Available in the sandbox:
-            - ``engine``: QueryEngine (call .search_transactions() or
-              .execute_sql() to fetch data)
-            - ``pd``: pandas
-            - ``np``: numpy
-            - Standard library: json, math, re, collections, itertools, etc.
-
-            Set a ``result`` variable at the end to return a value.
-            """
-            return run_code(
-                code=code,
-                timeout_seconds=timeout_seconds,
-            )
-
-        tools = list(PREDEFINED_TOOLS) + [run_python_code]
+        # Use the predefined tools list from tool_definitions, which
+        # already includes run_python_code (the sandbox code executor).
+        tools = list(PREDEFINED_TOOLS)
 
     # ── Build the LLM ───────────────────────────────────────────────────
     llm = get_llm(llm_config)
