@@ -60,7 +60,7 @@ const ToolStep = ({ event }: { event: any }) => {
         : `Retrying (${event.retry_count}/3)...`;
 
   return (
-    <Card className="my-2 overflow-hidden border-gray-800">
+    <Card className="my-2 overflow-hidden border-gray-800 animate-fade-in">
       <div 
         className="flex items-center justify-between p-2 cursor-pointer hover:bg-gray-900 transition-colors"
         onClick={() => setIsOpen(!isOpen)}
