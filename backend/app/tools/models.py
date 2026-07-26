@@ -72,29 +72,29 @@ class SearchParams(BaseModel):
 
     payment_currency: Optional[str] = Field(
         default=None,
-        description="Filter by the currency the sender paid with (e.g. USD, EUR, GBP, JPY, CNY, RUB, CHF, etc.).",
+        description="Filter by the payment currency name (e.g. UK pounds, US dollar, Euro, Swiss franc, Yen, Dirham, Naira). The dataset uses full currency names, NOT ISO codes.",
     )
     received_currency: Optional[str] = Field(
         default=None,
-        description="Filter by the currency the receiver got (e.g. USD, EUR, GBP, JPY, CNY, RUB, CHF, etc.).",
+        description="Filter by the received currency name (e.g. UK pounds, US dollar, Euro, Swiss franc, Yen, Dirham, Naira). The dataset uses full currency names, NOT ISO codes.",
     )
 
     # ── Location ───────────────────────────────────────────────────────
 
     sender_location: Optional[str] = Field(
         default=None,
-        description="Filter by the sender's bank location / country (e.g. US, GB, DE, CN, RU, CH, AE, etc.).",
+        description="Filter by the sender's bank location / country name (e.g. UK, USA, France, Germany, India, UAE). The dataset uses full country names/abbreviations, NOT ISO codes.",
     )
     receiver_location: Optional[str] = Field(
         default=None,
-        description="Filter by the receiver's bank location / country (e.g. US, GB, DE, CN, RU, CH, AE, etc.).",
+        description="Filter by the receiver's bank location / country name (e.g. UK, USA, France, Germany, India, UAE). The dataset uses full country names/abbreviations, NOT ISO codes.",
     )
 
     # ── Transaction type ───────────────────────────────────────────────
 
     payment_type: Optional[str] = Field(
         default=None,
-        description="Filter by the payment instrument / type (e.g. Wire Transfer, ACH, Check, Cash, Credit Card, Debit Card, Cryptocurrency, etc.).",
+        description="Filter by the payment instrument / type (e.g. ACH, Cash Deposit, Cash Withdrawal, Cheque, Credit card, Cross-border, Debit card).",
     )
 
     # ── Laundering ─────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ class SearchParams(BaseModel):
     )
     laundering_type: Optional[str] = Field(
         default=None,
-        description="Filter by the specific money-laundering pattern (e.g. Structuring, Smurfing, Trade-based, Cash smuggling, etc.).",
+        description="Filter by the specific money-laundering pattern (e.g. Structuring, Smurfing, Behavioural_Change_1, Bipartite, Fan_In, Fan_Out, Scatter-Gather).",
     )
 
     # ── Aggregation & output control ───────────────────────────────────
@@ -163,7 +163,7 @@ class HighValueParams(BaseModel):
     )
     payment_currency: Optional[str] = Field(
         default=None,
-        description="Filter by payment currency (e.g. USD, EUR, GBP).",
+        description="Filter by payment currency name (e.g. UK pounds, US dollar, Euro). The dataset uses full currency names, NOT ISO codes.",
     )
     limit: int = Field(
         default=100,
@@ -201,19 +201,19 @@ class SuspiciousPatternParams(BaseModel):
     )
     sender_location: Optional[str] = Field(
         default=None,
-        description="Focus on suspicious transactions from this sender location/country (e.g. RU, CN, IR, KP).",
+        description="Focus on suspicious transactions from this sender location/country name (e.g. UK, USA, France, UAE). The dataset uses full country names, NOT ISO codes.",
     )
     receiver_location: Optional[str] = Field(
         default=None,
-        description="Focus on suspicious transactions to this receiver location/country (e.g. RU, CN, IR, KP).",
+        description="Focus on suspicious transactions to this receiver location/country name (e.g. UK, USA, France, UAE). The dataset uses full country names, NOT ISO codes.",
     )
     payment_currency: Optional[str] = Field(
         default=None,
-        description="Filter suspicious transactions by payment currency (e.g. USD, EUR, CNY).",
+        description="Filter suspicious transactions by payment currency name (e.g. UK pounds, US dollar, Euro). The dataset uses full currency names, NOT ISO codes.",
     )
     laundering_type: Optional[str] = Field(
         default=None,
-        description="Filter by specific money-laundering pattern (e.g. Structuring, Smurfing, Trade-based).",
+        description="Filter by specific money-laundering pattern (e.g. Structuring, Smurfing, Behavioural_Change_1, Bipartite, Fan_In).",
     )
     limit: int = Field(
         default=100,
@@ -322,11 +322,11 @@ class Transaction(BaseModel):
     Sender_account: Optional[int] = Field(default=None, description="Unique sender account identifier.")
     Receiver_account: Optional[int] = Field(default=None, description="Unique receiver account identifier.")
     Amount: Optional[float] = Field(default=None, description="Transaction amount in the payment currency.")
-    Payment_currency: Optional[str] = Field(default=None, description="Currency code of the payment (e.g. USD).")
-    Received_currency: Optional[str] = Field(default=None, description="Currency code the receiver obtained (e.g. EUR).")
-    Sender_bank_location: Optional[str] = Field(default=None, description="Country code of the sender's bank (e.g. US).")
-    Receiver_bank_location: Optional[str] = Field(default=None, description="Country code of the receiver's bank (e.g. GB).")
-    Payment_type: Optional[str] = Field(default=None, description="Method of payment (e.g. Wire Transfer, ACH, Cryptocurrency).")
+    Payment_currency: Optional[str] = Field(default=None, description="Name of the payment currency (e.g. UK pounds, US dollar).")
+    Received_currency: Optional[str] = Field(default=None, description="Name of the currency received (e.g. UK pounds, US dollar).")
+    Sender_bank_location: Optional[str] = Field(default=None, description="Country name of the sender's bank (e.g. UK, USA).")
+    Receiver_bank_location: Optional[str] = Field(default=None, description="Country name of the receiver's bank (e.g. UK, USA).")
+    Payment_type: Optional[str] = Field(default=None, description="Method of payment (e.g. ACH, Cash Deposit, Cheque, Credit card, Cross-border, Debit card).")
     Is_laundering: Optional[int] = Field(default=None, description="Binary flag: 0 = legitimate, 1 = flagged as money laundering.")
     Laundering_type: Optional[str] = Field(default=None, description="Category of money laundering pattern (if flagged).")
 
