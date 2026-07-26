@@ -345,3 +345,64 @@ class SummaryResult(BaseModel):
 
     rows: list[dict[str, Any]] = Field(description="List of aggregated rows, one per group.")
     returned_count: int = Field(description="Number of rows returned in this result set.")
+
+
+# ---------------------------------------------------------------------------
+# ML Model Tool input models
+# ---------------------------------------------------------------------------
+
+
+class MLAnalysisParams(BaseModel):
+    """Parameters for the full AML ML pipeline analysis."""
+
+    max_flagged_results: int = Field(
+        default=50,
+        ge=1,
+        le=500,
+        description="Maximum number of flagged transaction records to return (1–500). Default 50.",
+    )
+    min_risk_level: str = Field(
+        default="low",
+        description=(
+            "Minimum risk level to include. "
+            "'low' = all flagged, 'medium' = medium+high, 'high' = high only. Default 'low'."
+        ),
+    )
+
+
+class AccountInvestigationParams(BaseModel):
+    """Parameters for investigating a specific account."""
+
+    account_id: int = Field(
+        description="The numerical account identifier to investigate (e.g. 4521). Must be a valid account ID from the dataset."
+    )
+
+
+class FlaggedExplanationParams(BaseModel):
+    """Parameters for getting an explanation for a flagged transaction."""
+
+    sender_account: int = Field(
+        description="The sender account numerical identifier of the flagged transaction."
+    )
+    receiver_account: int = Field(
+        description="The receiver account numerical identifier of the flagged transaction."
+    )
+    amount: float = Field(
+        ge=0,
+        description="The transaction amount (used for exact matching). Must match the flagged transaction amount.",
+    )
+
+
+class AMLPromptParams(BaseModel):
+    """Parameters for generating an LLM explanation prompt for a flagged transaction."""
+
+    sender_account: int = Field(
+        description="The sender account numerical identifier of the flagged transaction."
+    )
+    receiver_account: int = Field(
+        description="The receiver account numerical identifier of the flagged transaction."
+    )
+    amount: float = Field(
+        ge=0,
+        description="The transaction amount (used for exact matching). Must match the flagged transaction amount.",
+    )

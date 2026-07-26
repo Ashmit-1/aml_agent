@@ -18,9 +18,19 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 
 from app.tools.engine import QueryEngine
+from app.tools.ml_adapter import (
+    generate_aml_prompt as _generate_aml_prompt,
+    get_flagged_explanation as _get_flagged_explanation,
+    investigate_account as _investigate_account,
+    run_aml_analysis as _run_aml_analysis,
+)
 from app.tools.models import (
+    AccountInvestigationParams,
+    AMLPromptParams,
     CodeSandboxParams,
+    FlaggedExplanationParams,
     HighValueParams,
+    MLAnalysisParams,
     SearchParams,
     SqlQueryParams,
     SummaryParams,
@@ -293,6 +303,123 @@ def run_python_code(
     )
 
 
+# ── ML Model tools ────────────────────────────────────────────────────────────
+
+
+def run_aml_analysis(
+    max_flagged_results: int = 50,
+    min_risk_level: str = "low",
+) -> dict[str, Any]:
+    """Run the full ML-based AML detection pipeline on the transaction dataset.
+
+    Flags suspicious transactions using trained ML models (binary classifier +
+    pattern classifier), grades severity, traces evidence, and generates
+    human-readable explanations. Best suited for:
+    - "Analyse this dataset for suspicious activity"
+    - "Flag suspicious transactions for review"
+    - "Run the AML model on the transaction data"
+
+    Returns a summary with total/flagged counts, pattern and risk breakdowns,
+    and a list of the top flagged transactions with explanations.
+
+    The pipeline runs:
+        1. Feature engineering (31 account-level features)
+        2. Model 1: binary classifier → is_suspicious (0/1) + suspicion_score
+        3. Model 2: pattern classifier → aml_pattern (Structuring, Smurfing, etc.)
+        4. Risk classifier → severity_score (0-100), risk_level, escalation
+        5. Evidence tracer → responsible_count, evidence_account
+        6. Explanation generator → human-readable explanation
+
+    Returns a dict with: success (bool), summary (dict), flagged_transactions
+    (list of records), total_returned (int), csv_path (str), error (str or null).
+    """
+    return _run_aml_analysis(
+        max_flagged_results=max_flagged_results,
+        min_risk_level=min_risk_level,
+    )
+
+
+def investigate_account(
+    account_id: int,
+) -> dict[str, Any]:
+    """Analyse a specific account for suspicious activity.
+
+    Scores all transactions involving the account using the full ML pipeline,
+    with the entire dataset as context (ensures graph features are accurate).
+    Returns a verdict (suspicious/clean), risk level, severity score, pattern
+    breakdown, and flagged transaction details.
+
+    Best suited for:
+    - "Is account 4521 suspicious?"
+    - "What is the risk profile of account 8724731955?"
+    - "Check account 2769355426 for money laundering"
+
+    Returns a dict with: success (bool), verdict (str), risk_level (str),
+    escalation (str), severity_score (float), flagged_txns (int),
+    total_txns (int), pct_flagged (float or null), dominant_pattern (str or null),
+    total_amount_involved (float or null), flagged_transactions (list),
+    error (str or null).
+    """
+    return _investigate_account(
+        account_id=account_id,
+    )
+
+
+def get_flagged_explanation(
+    sender_account: int,
+    receiver_account: int,
+    amount: float,
+) -> dict[str, Any]:
+    """Get the human-readable explanation for a specific flagged transaction.
+
+    Finds the matching transaction in the scored dataset and returns the
+    explanation, pattern, risk, and evidence details.
+
+    Best suited for:
+    - "Why was transaction from X to Y for $Z flagged?"
+    - "Explain the flag on this transaction"
+    - After running ``run_aml_analysis``, diving deeper into a specific result
+
+    Returns a dict with: success (bool), found (bool), is_suspicious (int),
+    explanation (str or null), pattern (str or null), suspicion_score (float
+    or null), risk_level (str or null), escalation (str or null),
+    severity_score (float or null), evidence_count (int or null),
+    evidence_account (int or null), evidence_side (str or null),
+    error (str or null).
+    """
+    return _get_flagged_explanation(
+        sender_account=sender_account,
+        receiver_account=receiver_account,
+        amount=amount,
+    )
+
+
+def generate_aml_prompt(
+    sender_account: int,
+    receiver_account: int,
+    amount: float,
+) -> dict[str, Any]:
+    """Generate a structured prompt for an LLM to explain a flagged transaction.
+
+    Builds a complete, ready-to-send prompt string that includes the pattern
+    definition, a fact sheet with baseline comparisons (e.g. "32 unique senders
+    vs normal avg 5.5 → 5.8x above normal"), and analyst instructions.
+
+    Best suited for:
+    - "Generate an LLM prompt explaining this flagged transaction"
+    - "Why does the model think this is Structuring? Give me a narrative"
+    - After ``run_aml_analysis``, generating a detailed narrative for review
+
+    Returns a dict with: success (bool), found (bool), prompt (str or null),
+    fact_sheet (dict or null), error (str or null).
+    """
+    return _generate_aml_prompt(
+        sender_account=sender_account,
+        receiver_account=receiver_account,
+        amount=amount,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool registry  –  export this list so an agent can bind it
 # ---------------------------------------------------------------------------
@@ -366,6 +493,61 @@ TOOLS: list[StructuredTool] = [
         ),
         args_schema=CodeSandboxParams,
     ),
+    # ── ML Model tools ─────────────────────────────────────────────────
+    StructuredTool.from_function(
+        name="run_aml_analysis",
+        func=run_aml_analysis,
+        description=(
+            "Run the full ML-based AML detection pipeline on the transaction "
+            "dataset. Flags suspicious transactions (Model 1), classifies the "
+            "money-laundering pattern (Model 2), grades severity, traces evidence, "
+            "and generates human-readable explanations. Returns summary stats "
+            "(total/flagged counts, pattern breakdown, risk breakdown) and the "
+            "top flagged transaction records. Use this for 'analyse this dataset "
+            "for suspicious activity' or 'flag suspicious transactions' queries."
+        ),
+        args_schema=MLAnalysisParams,
+    ),
+    StructuredTool.from_function(
+        name="investigate_account",
+        func=investigate_account,
+        description=(
+            "Analyse a specific account for suspicious money-laundering activity. "
+            "Scores all transactions involving that account using the full ML "
+            "pipeline with the entire dataset as context. Returns a verdict "
+            "(suspicious/clean), risk level, severity score, dominant pattern, "
+            "and flagged transaction details. Use this for 'is account X "
+            "suspicious?' or 'check account X for money laundering' queries."
+        ),
+        args_schema=AccountInvestigationParams,
+    ),
+    StructuredTool.from_function(
+        name="get_flagged_explanation",
+        func=get_flagged_explanation,
+        description=(
+            "Get the human-readable explanation for a specific flagged transaction. "
+            "Returns why the ML model flagged it, the AML pattern detected, risk "
+            "level, evidence count, and which account the evidence centers on. "
+            "Use after run_aml_analysis to dive deeper into a specific result. "
+            "Provide the sender account, receiver account, and exact amount "
+            "to identify the transaction."
+        ),
+        args_schema=FlaggedExplanationParams,
+    ),
+    StructuredTool.from_function(
+        name="generate_aml_prompt",
+        func=generate_aml_prompt,
+        description=(
+            "Generate a structured, ready-to-send LLM prompt explaining why a "
+            "specific transaction was flagged. The prompt includes the AML pattern "
+            "definition, a fact sheet with baseline comparisons (feature values "
+            "vs normal avg vs pattern-typical avg), and analyst instructions. "
+            "Use after run_aml_analysis to get a detailed narrative explanation "
+            "from an external LLM. Provide the sender account, receiver account, "
+            "and exact amount to identify the transaction."
+        ),
+        args_schema=AMLPromptParams,
+    ),
 ]
 
 __all__ = [
@@ -376,4 +558,9 @@ __all__ = [
     "get_summary_statistics",
     "run_sql_query",
     "run_python_code",
+    # ML Model tools
+    "run_aml_analysis",
+    "investigate_account",
+    "get_flagged_explanation",
+    "generate_aml_prompt",
 ]

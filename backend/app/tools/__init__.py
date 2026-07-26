@@ -2,7 +2,8 @@
 AML Transaction Analysis Tools.
 
 This module provides tools for querying the SAML-D dataset (9.5M+ rows)
-using DuckDB for efficient, parameterized SQL queries directly on the CSV.
+using DuckDB for efficient, parameterized SQL queries directly on the CSV,
+plus ML model tools for running the AML detection pipeline.
 
 Usage::
 
@@ -13,8 +14,19 @@ Usage::
 """
 
 from app.tools.engine import QueryEngine
+from app.tools.ml_adapter import (
+    CSV_PATH as AML_CSV_PATH,
+    generate_aml_prompt,
+    get_flagged_explanation,
+    investigate_account,
+    run_aml_analysis,
+)
 from app.tools.models import (
+    AccountInvestigationParams,
+    AMLPromptParams,
+    FlaggedExplanationParams,
     HighValueParams,
+    MLAnalysisParams,
     PaginatedResult,
     SearchParams,
     SqlQueryParams,
@@ -54,6 +66,11 @@ __all__ = [
     "Transaction",
     "PaginatedResult",
     "SummaryResult",
+    # ML Model parameters
+    "MLAnalysisParams",
+    "AccountInvestigationParams",
+    "FlaggedExplanationParams",
+    "AMLPromptParams",
     # Engine
     "QueryEngine",
     # LangChain-compatible tool definitions
@@ -64,6 +81,12 @@ __all__ = [
     "get_summary_statistics",
     "run_sql_query",
     "run_python_code",
+    # ML Model tools
+    "run_aml_analysis",
+    "investigate_account",
+    "get_flagged_explanation",
+    "generate_aml_prompt",
+    "AML_CSV_PATH",
     # Sandbox
     "run_code",
     # Schema helpers
