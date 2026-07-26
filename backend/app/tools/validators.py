@@ -27,13 +27,13 @@ COLUMN_META: list[dict[str, str]] = [
     {"name": "Sender_account", "type": "INTEGER", "description": "Unique sender account identifier"},
     {"name": "Receiver_account", "type": "INTEGER", "description": "Unique receiver account identifier"},
     {"name": "Amount", "type": "FLOAT", "description": "Transaction amount in payment currency"},
-    {"name": "Payment_currency", "type": "TEXT", "description": "Currency code of the payment (e.g. USD, EUR, GBP, JPY, CNY, RUB, CHF)"},
-    {"name": "Received_currency", "type": "TEXT", "description": "Currency code received (e.g. USD, EUR, GBP, JPY, CNY, RUB, CHF)"},
-    {"name": "Sender_bank_location", "type": "TEXT", "description": "Country code of sender's bank (e.g. US, GB, DE, CN, RU, CH, AE, HK)"},
-    {"name": "Receiver_bank_location", "type": "TEXT", "description": "Country code of receiver's bank (e.g. US, GB, DE, CN, RU, CH, AE, HK)"},
-    {"name": "Payment_type", "type": "TEXT", "description": "Payment method: Wire Transfer, ACH, Check, Cash, Credit Card, Debit Card, Cryptocurrency, etc."},
+    {"name": "Payment_currency", "type": "TEXT", "description": "Name of the payment currency (e.g. 'UK pounds', 'US dollar', 'Euro', 'Swiss franc', 'Yen', 'Dirham')"},
+    {"name": "Received_currency", "type": "TEXT", "description": "Name of the currency received (e.g. 'UK pounds', 'US dollar', 'Euro', 'Swiss franc', 'Yen', 'Dirham')"},
+    {"name": "Sender_bank_location", "type": "TEXT", "description": "Country name of sender's bank (e.g. 'UK', 'USA', 'France', 'Germany', 'India', 'UAE')"},
+    {"name": "Receiver_bank_location", "type": "TEXT", "description": "Country name of receiver's bank (e.g. 'UK', 'USA', 'France', 'Germany', 'India', 'UAE')"},
+    {"name": "Payment_type", "type": "TEXT", "description": "Payment method (e.g. ACH, Cash Deposit, Cash Withdrawal, Cheque, Credit card, Cross-border, Debit card)"},
     {"name": "Is_laundering", "type": "INT (0 or 1)", "description": "Money-laundering flag: 0 = legitimate, 1 = flagged suspicious"},
-    {"name": "Laundering_type", "type": "TEXT", "description": "Laundering pattern: Structuring, Smurfing, Trade-based, Cash smuggling, Real estate, Shell company, etc."},
+    {"name": "Laundering_type", "type": "TEXT", "description": "Laundering pattern (e.g. Structuring, Smurfing, Behavioural_Change_1, Bipartite, Fan_In, Fan_Out, Scatter-Gather)"},
 ]
 
 KNOWN_COLUMNS: frozenset[str] = frozenset(col["name"] for col in COLUMN_META)
@@ -93,22 +93,108 @@ def validate_aggregate_column(name: str) -> None:
         )
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """Strip leading SQL comments (-- line comments and /* block comments */)."""
+    # Remove single-line comments (-- ...) at the start
+    while True:
+        stripped = sql.lstrip()
+        if stripped.startswith("--"):
+            # Find end of line
+            nl = stripped.find("\n")
+            if nl == -1:
+                return ""
+            sql = stripped[nl + 1 :]
+        elif stripped.startswith("/*"):
+            end = stripped.find("*/")
+            if end == -1:
+                return ""
+            sql = stripped[end + 2 :]
+        else:
+            break
+    return sql
+
+
 def validate_sql_select(sql: str) -> str:
     """Validate that *sql* is a read-only SELECT statement.
 
-    Strips leading whitespace, uppercases the keyword check, and raises
-    ``ValueError`` if the statement doesn't start with ``SELECT``.
+    Strips leading whitespace, leading SQL comments (``--`` line comments
+    and ``/* */`` block comments), and leading ``WITH`` clauses (CTEs)
+    before checking that the statement starts with ``SELECT``.
+
+    Also rejects multi-statement SQL (semicolons within the statement).
 
     Returns the stripped SQL string on success.
     """
     stripped = sql.strip()
-    # Normalise whitespace for the keyword check
-    upper = stripped.upper().lstrip()
+
+    # Strip leading comments
+    no_comments = _strip_sql_comments(stripped)
+    if not no_comments:
+        raise ValueError(
+            "Only SELECT queries are allowed. Received a comment-only or empty statement."
+        )
+
+    # Strip leading WITH clause (CTEs) – e.g. "WITH foo AS (...) SELECT ..."
+    upper = no_comments.upper().lstrip()
+    while upper.startswith("WITH "):
+        # Find the matching WITH ... SELECT pattern
+        # Look for the final SELECT after the CTE definitions
+        # Skip past the CTE by finding the SELECT keyword
+        # that is not inside parentheses
+        depth = 0
+        select_pos = -1
+        for i, ch in enumerate(no_comments):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif depth == 0 and ch.upper() == "S":
+                # Check if this is the start of a SELECT keyword
+                if no_comments[i:].upper().startswith("SELECT"):
+                    select_pos = i
+                    break
+        if select_pos == -1:
+            raise ValueError(
+                "Only SELECT queries are allowed. "
+                "Found WITH clause without a following SELECT."
+            )
+        no_comments = no_comments[select_pos:]
+        upper = no_comments.upper().lstrip()
+
+    # Now check for SELECT
     if not upper.startswith("SELECT"):
         raise ValueError(
             "Only SELECT queries are allowed. "
             f"Received SQL starting with: {upper.split()[0] if upper else '(empty)'}"
         )
+
+    # Reject multi-statement SQL — walk through and flag semicolons
+    # that appear outside of string literals. Handles SQL-standard `''`
+    # escape sequences within strings. Trailing semicolons are allowed
+    # (they are stripped before the check).
+    check_multi = stripped.rstrip().rstrip(";").rstrip()
+    in_string: bool = False
+    quote_char: str | None = None
+    i = 0
+    while i < len(check_multi):
+        ch = check_multi[i]
+        if in_string:
+            if ch == quote_char:
+                # SQL-standard escaped quote: '' or "" inside strings
+                if i + 1 < len(check_multi) and check_multi[i + 1] == quote_char:
+                    i += 2
+                    continue
+                in_string = False
+        elif ch in ("'", '"'):
+            in_string = True
+            quote_char = ch
+        elif ch == ";":
+            raise ValueError(
+                "Multi-statement SQL is not allowed. "
+                "A semicolon was found outside a string literal."
+            )
+        i += 1
+
     return stripped
 
 
