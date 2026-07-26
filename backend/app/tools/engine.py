@@ -9,6 +9,7 @@ queries.
 
 from __future__ import annotations
 
+import datetime
 import os
 import re
 from dataclasses import dataclass, field
@@ -79,6 +80,14 @@ class QueryEngine:
     # ------------------------------------------------------------------
     # Query helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _serialize_row(row: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Convert DuckDB native types (date, time) to ISO strings for JSON-safe output."""
+        return tuple(
+            val.isoformat() if isinstance(val, (datetime.date, datetime.time)) else val
+            for val in row
+        )
 
     @staticmethod
     def _build_where(params: SearchParams) -> tuple[str, list[Any]]:
@@ -200,7 +209,7 @@ class QueryEngine:
         rows = self._conn.execute(data_sql, data_values).fetchall()
         columns = [desc[0] for desc in self._conn.description]
 
-        results = [dict(zip(columns, row)) for row in rows]
+        results = [dict(zip(columns, self._serialize_row(row))) for row in rows]
 
         return PaginatedResult(
             total_count=total,
@@ -324,7 +333,7 @@ class QueryEngine:
         columns = [desc[0] for desc in self._conn.description]
 
         return SummaryResult(
-            rows=[dict(zip(columns, row)) for row in rows],
+            rows=[dict(zip(columns, self._serialize_row(row))) for row in rows],
             returned_count=len(rows),
         )
 
@@ -355,4 +364,4 @@ class QueryEngine:
         rows = self._conn.execute(safe_sql).fetchall()
         columns = [desc[0] for desc in self._conn.description]
 
-        return [dict(zip(columns, row)) for row in rows]
+        return [dict(zip(columns, self._serialize_row(row))) for row in rows]
