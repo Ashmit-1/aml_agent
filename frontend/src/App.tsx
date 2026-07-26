@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { Sidebar } from './Sidebar';
-import { ChatInterface } from './ChatInterface';
+import { Sidebar } from './components/Sidebar';
+import { ChatInterface } from './components/ChatInterface';
 import { useChatStore } from '@/store/chatStore';
 
 const App = () => {

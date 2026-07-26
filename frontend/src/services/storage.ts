@@ -15,6 +15,7 @@ export const storage = {
   },
 
   async saveConversation(conversation: Conversation): Promise<void> {
+    conversation.updatedAt = Date.now();
     await localforage.setItem(`conversation:${conversation.id}`, conversation);
     
     const index = await this.getConversations();
@@ -51,7 +52,7 @@ export const storage = {
       title: firstMessage.slice(0, 40) + (firstMessage.length > 40 ? '...' : ''),
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      messages: [],
+      messages: [{ role: 'user', content: firstMessage }],
     };
     await this.saveConversation(conversation);
     return conversation;

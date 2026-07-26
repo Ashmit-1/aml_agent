@@ -47,6 +47,7 @@ export const Sidebar = () => {
     const conv = await storage.getConversation(id);
     if (conv) {
       conv.title = editValue;
+      conv.updatedAt = Date.now();
       await storage.saveConversation(conv);
       await refreshConversations();
     }

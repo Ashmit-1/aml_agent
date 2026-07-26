@@ -26,7 +26,7 @@ import remarkGfm from 'remark-gfm';
 import { useChatStore } from '@/store/chatStore';
 import { storage } from '@/services/storage';
 import { chatService } from '@/services/chatApi';
-import { ChatMessage, SSEEvent } from '@/types';
+import { ChatMessage } from '@/types';
 import { cn } from '@/lib/utils';
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
@@ -45,13 +45,17 @@ const ToolStep = ({ event }: { event: any }) => {
     ? (TOOL_ICONS[event.tool] || <Search size={16} />) 
     : event.type === 'tool_result' 
       ? <CheckCircle2 size={16} /> 
-      : <AlertTriangle size={16} />;
+      : event.type === 'thinking' 
+        ? <Brain size={16} /> 
+        : <AlertTriangle size={16} />;
 
   const __label = event.type === 'tool_call' 
     ? `Calling ${event.tool}` 
     : event.type === 'tool_result' 
       ? `Result from ${event.tool}` 
-      : `Retrying (${event.retry_count}/3)...`;
+      : event.type === 'thinking' 
+        ? `Thinking...` 
+        : `Retrying (${event.retry_count}/3)...`;
 
   return (
     <Card className="my-2 overflow-hidden border-gray-800">
@@ -72,7 +76,9 @@ const ToolStep = ({ event }: { event: any }) => {
               ? JSON.stringify(event.arguments, null, 2) 
               : event.type === 'tool_result' 
                 ? event.summary 
-                : event.reason}
+                : event.type === 'thinking' 
+                  ? event.content 
+                  : event.reason}
           </pre>
         </div>
       )}
@@ -170,13 +176,18 @@ export const ChatInterface = () => {
     if (!currentConv) return;
 
     const history = currentConv.messages.map(m => ({ role: m.role, content: m.content }));
-    const newMessages = [...currentConv.messages, { role: 'user', content: userMsg }];
+    
+    // The user message is already in the conversation from createConversation 
+    // or we need to add it if it's an existing one.
+    const newMessages = [...currentConv.messages];
+    if (currentConvId === activeConversationId) {
+        newMessages.push({ role: 'user', content: userMsg });
+    }
     setMessages(newMessages);
 
     try {
       const stream = chatService.streamChat(userMsg, history);
       
-      // Initialize assistant bubble state
       const assistantMsgIndex = newMessages.length;
       setMessages(prev => [...prev, { 
         role: 'assistant', 
@@ -190,65 +201,48 @@ export const ChatInterface = () => {
           setMessages(prev => {
             const updated = [...prev];
             const assistantMsg = updated[assistantMsgIndex];
-            
-            if (stepData.type === 'thinking') {
-              // Thinking is just a step, we can add it to steps or merge into content 
-              // based on design. Let's add it as a special step for now.
-              assistantMsg.steps = [...(assistantMsg.steps || []), { ...stepData, icon: <Brain size={16} /> }];
+            if (!assistantMsg) return prev;
+
+            if (stepData.type === 'response') {
+              assistantMsg.content = stepData.content;
             } else {
               assistantMsg.steps = [...(assistantMsg.steps || []), stepData];
             }
             return updated;
           });
-        } else if (event.type === 'done') {
-          // The stream has already updated the final response content via 'response' type step
-          break;
         } else if (event.type === 'error') {
           setMessages(prev => {
             const updated = [...prev];
-            updated[assistantMsgIndex].content = `**Error:** ${event.data.message}`;
+            if (updated[assistantMsgIndex]) {
+              updated[assistantMsgIndex].content = `**Error:** ${event.data.message}`;
+            }
             return updated;
           });
           break;
         }
       }
-      
-      // The final content update happens within the 'step' processing if it's type 'response'
-      // Wait, I need to handle the 'response' type specifically to update the content.
     } catch (err: any) {
-      setMessages(prev => prev + [{ role: 'assistant', content: `Error: ${err.message}` }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);
     } finally {
       setIsTyping(false);
+      
+      // Persist the final state of the conversation
+      setMessages(async (prev) => {
+        const conversation = {
+          id: currentConvId!,
+          title: currentConv?.title || userMsg,
+          createdAt: currentConv?.createdAt || Date.now(),
+          updatedAt: Date.now(),
+          messages: prev.filter(m => m.role !== 'assistant' || m.content !== '').map((m: any) => ({
+            role: m.role,
+            content: m.content
+          })) as ChatMessage[]
+        };
+        await storage.saveConversation(conversation);
+        return prev;
+      });
+      
       refreshConversations();
-    }
-  };
-
-  // Refined stream processing logic
-  const processStream = async (userMsg: string, history: any[], assistantIndex: number) => {
-    const stream = chatService.streamChat(userMsg, history);
-    for await (const event of stream) {
-      if (event.type === 'step') {
-        const step = event.data;
-        if (step.type === 'response') {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[assistantIndex].content = step.content;
-            return updated;
-          });
-        } else if (step.type === 'thinking') {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[assistantIndex].steps = [...(updated[assistantIndex].steps || []), { ...step, label: 'Thinking...' }];
-            return updated;
-          });
-        } else {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[assistantIndex].steps = [...(updated[assistantIndex].steps || []), step];
-            return updated;
-          });
-        }
-      }
     }
   };
 
