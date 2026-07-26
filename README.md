@@ -35,6 +35,33 @@ This platform provides an intelligent conversational interface for querying and 
 4. Return clear, actionable insights
 
 ---
+## Dataset
+
+This project uses the **SAML-D (Synthetic Anti-Money Laundering Dataset)**, a synthetic transaction-monitoring dataset built for developing and benchmarking AML detection systems.
+
+| Attribute | Detail |
+|---|---|
+| **Name** | SAML-D — Synthetic Anti-Money Laundering Dataset |
+| **Source** | [Kaggle — Berkan Oztas](https://www.kaggle.com/datasets/berkanoztas/synthetic-transaction-monitoring-dataset-aml) |
+| **License** | CC BY-NC-SA 4.0 (Non-Commercial) |
+| **Size** | 9,504,852 transactions across 12 columns |
+| **Labeled suspicious** | 9,873 transactions (~0.104%) |
+| **Typologies** | 28 total — 11 normal + 17 suspicious (Structuring, Smurfing, Layering, Fan-In/Out, Cycle, Scatter-Gather, Over-Invoicing, etc.) |
+
+**Columns:** `Time`, `Date`, `Sender_account`, `Receiver_account`, `Amount`, `Payment_currency`, `Received_currency`, `Sender_bank_location`, `Receiver_bank_location`, `Payment_type`, `Is_laundering` (0/1 flag), `Laundering_type` (named typology).
+
+**Citation:** B. Oztas, D. Cetinkaya, F. Adedoyin, M. Budka, H. Dogan, and G. Aksu, "Enhancing Anti-Money Laundering: Development of a Synthetic Transaction Monitoring Dataset," *2023 IEEE International Conference on e-Business Engineering (ICEBE)*, 2023.
+
+### Why we chose SAML-D
+
+- **Named AML typologies, not just a binary flag.** Unlike most fraud datasets that only provide a 0/1 label, SAML-D labels each suspicious transaction with its specific typology (`Laundering_type`) — Structuring, Smurfing, Layering, and more. This lets the system both *detect* suspicious activity and *classify which laundering technique* is being used.
+- **Purpose-built for AML transaction monitoring.** It models real AML signals — cross-border transfers, currency mismatches, and high-risk jurisdictions — rather than generic payment fraud.
+- **Realistic scale and class imbalance.** ~9.5M transactions with only ~0.1% suspicious mirrors the extreme imbalance real compliance teams face, making the evaluation meaningful.
+- **Open, public, and citable.** Freely available on Kaggle with a clear license and an accompanying peer-reviewed paper, satisfying the requirement to source datasets from public/open repositories.
+
+> Download instructions are in the [Dataset Download](#dataset-download) section below. The dataset is not committed to this repository due to its size and license.
+
+---
 
 ## Features
 
