@@ -27,7 +27,7 @@ An AI-powered platform for analyzing the **SAML-D (Synthetic Anti-Money Launderi
 
 ## Overview
 
-This platform provides an intelligent conversational interface for querying and analyzing financial transaction data for anti-money laundering (AML) compliance. Users can ask questions in natural language, and the AI agent will:
+This platform provides an intelligent conversational interface for querying and analyzing financial transaction data for anti-money laundering (AML) compliance. Users can ask questions in natural language, and the AI agent will:-
 
 1. Understand the query intent
 2. Select appropriate tools (structured queries, SQL, or Python code)
