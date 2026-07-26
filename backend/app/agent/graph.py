@@ -232,7 +232,7 @@ def build_agent(
         {"agent": "agent", END: END},
     )
 
-    return workflow.compile(recursion_limit=25)
+    return workflow.compile()
 
 
 __all__ = [

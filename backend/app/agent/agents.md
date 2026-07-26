@@ -48,7 +48,7 @@ The agent is a directed graph with three nodes and conditional routing:
          agent (loop)              END (give up)
 ```
 
-The graph loops until the LLM decides to produce a final answer (no more tool calls), the `retry_count` exceeds the maximum (graceful termination with a message to the user), or the `recursion_limit` of 25 is reached (safety net).
+The graph loops until the LLM decides to produce a final answer (no more tool calls), the `retry_count` exceeds the maximum (graceful termination with a message to the user), or the internal LangGraph `recursion_limit` (default 25) is reached as a safety net.
 
 ---
 
@@ -138,7 +138,13 @@ Defined in `app/agent/state.py`:
 | `check_error` | `retry_count <= 3` | `agent` | Continue loop (LLM decides next step) |
 | `check_error` | `retry_count > 3` | `END` | Graceful termination (max retries exceeded) |
 
-The `recursion_limit=25` on `workflow.compile()` acts as a safety net for unexpected infinite loops (e.g., the LLM making successful tool calls without ever producing a final answer). Under normal conditions, the agent terminates gracefully when `retry_count > _MAX_RETRIES`.
+LangGraph has a built-in `recursion_limit` (default 25) that acts as a safety net for unexpected infinite loops (e.g., the LLM making successful tool calls without ever producing a final answer). Under normal conditions, the agent terminates gracefully when `retry_count > _MAX_RETRIES`.
+
+To override the default limit at invocation time, pass it via config:
+
+```python
+result = agent.invoke(inputs, config={"recursion_limit": 50})
+```
 
 ---
 
