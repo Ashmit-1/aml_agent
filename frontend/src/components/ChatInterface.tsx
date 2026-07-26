@@ -163,85 +163,90 @@ export const ChatInterface = () => {
     setIsTyping(true);
 
     let currentConvId = activeConversationId;
-    let currentConv = null;
-
-    if (!currentConvId) {
-      currentConv = await storage.createConversation(userMsg);
-      currentConvId = currentConv.id;
-      setActiveConversation(currentConvId);
-    } else {
-      currentConv = await storage.getConversation(currentConvId!);
-    }
-
-    if (!currentConv) return;
-
-    const history = currentConv.messages.map(m => ({ role: m.role, content: m.content }));
-    
-    // The user message is already in the conversation from createConversation 
-    // or we need to add it if it's an existing one.
-    const newMessages = [...currentConv.messages];
-    if (currentConvId === activeConversationId) {
-        newMessages.push({ role: 'user', content: userMsg });
-    }
-    setMessages(newMessages);
+    let conversation: any = null;
 
     try {
+      if (!currentConvId) {
+        conversation = await storage.createConversation(userMsg);
+        currentConvId = conversation.id;
+        setActiveConversation(currentConvId);
+      } else {
+        conversation = await storage.getConversation(currentConvId);
+        if (!conversation) throw new Error("Conversation not found");
+        
+        // Update existing conversation with new user message
+        conversation.messages.push({ role: 'user' as const, content: userMsg });
+        await storage.saveConversation(conversation);
+      }
+
+      setMessages(conversation.messages);
+
+      const history = conversation.messages
+        .slice(0, -1) // All except the very last user message (backend wants it in 'message' field)
+        .map((m: any) => ({ role: m.role, content: m.content }));
+
       const stream = chatService.streamChat(userMsg, history);
       
-      const assistantMsgIndex = newMessages.length;
+      // Add a placeholder for the assistant's streaming response
+      const assistantMsgIndex = conversation.messages.length;
       setMessages(prev => [...prev, { 
-        role: 'assistant', 
+        role: 'assistant' as const, 
         content: '', 
         steps: [] 
       }]);
 
+      let finalAssistantContent = '';
+      let finalSteps: any[] = [];
+
       for await (const event of stream) {
         if (event.type === 'step') {
           const stepData = event.data;
-          setMessages(prev => {
-            const updated = [...prev];
-            const assistantMsg = updated[assistantMsgIndex];
-            if (!assistantMsg) return prev;
-
-            if (stepData.type === 'response') {
-              assistantMsg.content = stepData.content;
-            } else {
-              assistantMsg.steps = [...(assistantMsg.steps || []), stepData];
-            }
-            return updated;
-          });
+          
+          if (stepData.type === 'response') {
+            finalAssistantContent = stepData.content;
+            setMessages(prev => {
+              const updated = [...prev];
+              if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = stepData.content;
+              return updated;
+            });
+          } else {
+            finalSteps.push(stepData);
+            setMessages(prev => {
+              const updated = [...prev];
+              if (updated[assistantMsgIndex]) {
+                updated[assistantMsgIndex].steps = [...(updated[assistantMsgIndex].steps || []), stepData];
+              }
+              return updated;
+            });
+          }
         } else if (event.type === 'error') {
+          finalAssistantContent = `**Error:** ${event.data.message}`;
           setMessages(prev => {
             const updated = [...prev];
-            if (updated[assistantMsgIndex]) {
-              updated[assistantMsgIndex].content = `**Error:** ${event.data.message}`;
-            }
+            if (updated[assistantMsgIndex]) updated[assistantMsgIndex].content = finalAssistantContent;
             return updated;
           });
           break;
         }
       }
+
+      // PERSISTENCE: Save final state after stream completion
+      conversation.messages.push({ 
+        role: 'assistant' as const, 
+        content: finalAssistantContent || 'No response received.' 
+      });
+      await storage.saveConversation(conversation);
+      
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);
+      const errorMsg = { role: 'assistant' as const, content: `Error: ${err.message}` };
+      setMessages(prev => [...prev, errorMsg]);
+      
+      if (conversation && currentConvId) {
+        conversation.messages.push(errorMsg);
+        await storage.saveConversation(conversation);
+      }
     } finally {
       setIsTyping(false);
-      
-      // Persist the final state of the conversation
-      setMessages(async (prev) => {
-        const conversation = {
-          id: currentConvId!,
-          title: currentConv?.title || userMsg,
-          createdAt: currentConv?.createdAt || Date.now(),
-          updatedAt: Date.now(),
-          messages: prev.filter(m => m.role !== 'assistant' || m.content !== '').map((m: any) => ({
-            role: m.role,
-            content: m.content
-          })) as ChatMessage[]
-        };
-        await storage.saveConversation(conversation);
-        return prev;
-      });
-      
       refreshConversations();
     }
   };
@@ -254,13 +259,13 @@ export const ChatInterface = () => {
             <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
               <div className="h-16 w-16 rounded-full border border-white flex items-center justify-center mb-4">
                 <Bot size={32} />
-              </div>
+              </div_
               <h1 className="text-2xl font-medium">Agent Intelligence</h1>
               <p className="text-gray-500 max-w-md">
                 Ask me about the dataset. I can search transactions, 
                 analyze patterns, and run Python code to find answers.
               </p>
-            </div>
+            </div_
           )}
           {messages.map((msg, idx) => (
             <ChatBubble key={idx} role={msg.role} content={msg.content} steps={msg.steps} />
@@ -287,8 +292,8 @@ export const ChatInterface = () => {
               {isTyping ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
             </Button>
           </form>
-        </div>
-      </div>
-    </div>
+        </div_
+      </div_
+    </div_
   );
 };
