@@ -227,7 +227,7 @@ class QueryEngine:
         **When to use:**
         - The user asks about "large", "big", or "high-value" transactions.
         - Queries about transactions exceeding a certain amount threshold.
-        - Regulatory reporting contexts (e.g. CTR – Currency Transaction Reports).
+        - Regulatory reporting contexts (e.g. CTR - Currency Transaction Reports).
 
         Delegates to ``search_transactions`` with appropriate defaults.
         """

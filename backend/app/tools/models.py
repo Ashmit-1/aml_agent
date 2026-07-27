@@ -21,7 +21,7 @@ class SearchParams(BaseModel):
     """Composite filter parameters for searching AML transactions.
 
     Use this to search or filter the transaction dataset. All fields are
-    optional – only supplied fields are applied as filters.  Supports
+    optional - only supplied fields are applied as filters.  Supports
     pagination, grouping, and aggregation in a single call.
     """
 
