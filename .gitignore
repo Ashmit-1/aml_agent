@@ -6,3 +6,12 @@ frontend/design.md
 backend/design.md
 backend/backend.md
 frontend/backend.md
+backend/auth-spec.md
+backend/frontend-auth-landing-spec.md
+frontend/auth-spec.md
+frontend/frontend-auth-landing-impl-spec.md
+frontend/frontend-auth-landing-spec.md
+backend/auth.db
+.gitignore
+backend/auth.db-wal
+backend/auth.db-shm
