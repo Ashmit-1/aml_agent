@@ -19,6 +19,9 @@ import {
   Menu,
   X
 } from 'lucide-react';
+import { Sidebar } from '@/components/Sidebar';
+import { FluxGuardLogo } from '@/components/FluxGuardLogo';
+import { UserMenu } from '@/components/UserMenu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -28,8 +31,45 @@ import remarkGfm from 'remark-gfm';
 import { useChatStore } from '@/store/chatStore';
 import { storage } from '@/services/storage';
 import { chatService } from '@/services/chatApi';
+import type { StepEvent } from '@/types';
 
 import { cn } from '@/lib/utils';
+
+// Stable stringify: sorts object keys recursively for deterministic output
+// Handles circular references via a seen set
+function stableStringify(obj: any, seen = new WeakSet()): string {
+  if (obj === null || obj === undefined) return 'null';
+  if (typeof obj !== 'object') return JSON.stringify(obj);
+  if (seen.has(obj)) return '"[Circular]"';
+  seen.add(obj);
+  if (Array.isArray(obj)) {
+    const items = obj.map(item => stableStringify(item, seen));
+    seen.delete(obj);
+    return `[${items.join(',')}]`;
+  }
+  const keys = Object.keys(obj).sort();
+  const pairs = keys.map(k => `${JSON.stringify(k)}:${stableStringify(obj[k], seen)}`);
+  seen.delete(obj);
+  return `{${pairs.join(',')}}`;
+}
+
+// Helper to generate stable deduplication keys for step events
+function getStepKey(step: StepEvent): string {
+  switch (step.type) {
+    case 'thinking':
+      return `thinking:${step.content || ''}`;
+    case 'tool_call':
+      return `tool_call:${step.tool}:${stableStringify(step.arguments)}`;
+    case 'tool_result':
+      return `tool_result:${step.tool}:${step.summary || ''}`;
+    case 'retry':
+      return `retry:${step.retry_count}:${step.reason || ''}`;
+    case 'response':
+      return `response:${step.content || ''}`;
+    default:
+      return JSON.stringify(step);
+  }
+}
 
 const TOOL_ICONS: Record<string, ReactNode> = {
   search_transactions: <Search size={16} />,
@@ -40,11 +80,11 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   run_python_code: <Terminal size={16} />,
 };
 
-const ToolStep = ({ event }: { event: any }) => {
+const ToolStep = ({ event }: { event: StepEvent }) => {
   const [isOpen, setIsOpen] = useState(event.type !== 'thinking');
   
   const __icon = event.type === 'tool_call' 
-    ? (TOOL_ICONS[event.tool] || <Search size={16} />) 
+    ? (event.tool && TOOL_ICONS[event.tool] || <Search size={16} />) 
     : event.type === 'tool_result' 
       ? <CheckCircle2 size={16} /> 
       : event.type === 'thinking' 
@@ -171,7 +211,8 @@ const ChatBubble = ({ role, content, steps, isTyping }: { role: 'user' | 'assist
 export const ChatInterface = () => {
   const { 
     activeConversationId, 
-    setActiveConversation, 
+    setActiveConversation,
+    loadConversations,
     refreshConversations,
     sidebarOpen,
     setSidebarOpen
@@ -193,6 +234,11 @@ export const ChatInterface = () => {
       setMessages([]);
     }
   }, [activeConversationId]);
+
+  // Load conversations from IndexedDB on mount (Bug 2 fix)
+  useEffect(() => {
+    loadConversations();
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -222,7 +268,8 @@ export const ChatInterface = () => {
         
         // Update existing conversation with new user message
         conversation.messages.push({ role: 'user' as const, content: userMsg });
-        await storage.saveConversation(conversation);
+        // Note: We save only after getting the complete response to avoid
+        // inconsistent state if stream fails (Bug 12 fix)
       }
 
       setMessages(conversation.messages);
@@ -274,18 +321,18 @@ export const ChatInterface = () => {
             });
           } else {
             // Only push to accumulatedSteps if not already present (dedup)
-            const stepKey = JSON.stringify(stepData);
-            if (!accumulatedSteps.some(s => JSON.stringify(s) === stepKey)) {
+            const stepKey = getStepKey(stepData as StepEvent);
+            if (!accumulatedSteps.some(s => getStepKey(s) === stepKey)) {
               accumulatedSteps.push(stepData);
             }
             flushSync(() => {
               setMessages(prev => {
                 const updated = [...prev];
                 if (updated[assistantMsgIndex]) {
-                  const existingSteps = updated[assistantMsgIndex].steps || [];
+                  const existingSteps = (updated[assistantMsgIndex].steps || []) as StepEvent[];
                   // Check if this step is already in the array before appending
                   const alreadyExists = existingSteps.some(
-                    (s: any) => JSON.stringify(s) === stepKey
+                    s => getStepKey(s) === stepKey
                   );
                   if (!alreadyExists) {
                     updated[assistantMsgIndex].steps = [...existingSteps, stepData];
@@ -343,74 +390,79 @@ export const ChatInterface = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-black text-white">
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-      
-      {/* Mobile hamburger button */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed top-4 left-4 z-50 md:hidden flex items-center justify-center h-9 w-9 rounded-md border border-white/20 bg-black text-white hover:bg-gray-900 transition-colors"
-        aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
-      >
-        {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
-      </button>
+    <div className="flex h-screen bg-black text-white">
+      <Sidebar />
 
-      {/* Persistent top bar with agent logo */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
-        <div className="h-8 w-8 rounded-full border border-white flex items-center justify-center">
-          <Bot size={16} />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-medium">Agent Intelligence</span>
-          <span className="text-xs text-gray-500">Ask me anything about the data</span>
-        </div>
-      </div>
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-30 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        
+        {/* Mobile hamburger button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="fixed top-4 left-4 z-50 md:hidden flex items-center justify-center h-9 w-9 rounded-md border border-white/20 bg-black text-white hover:bg-gray-900 transition-colors"
+          aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+        >
+          {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
 
-      <div className="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full">
-        <ScrollArea className="flex-1 p-4 overflow-y-auto">
-          {messages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
-              <div className="h-16 w-16 rounded-full border border-white flex items-center justify-center mb-4">
-                <Bot size={32} />
-              </div>
-              <h1 className="text-2xl font-medium">Agent Intelligence</h1>
-              <p className="text-gray-500 max-w-md">
-                Ask me about the dataset. I can search transactions, 
-                analyze patterns, and run Python code to find answers.
-              </p>
+        {/* Persistent top bar with FluxGuard branding and user menu */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 md:pl-4 pl-12">
+          <div className="flex items-center gap-3">
+            <FluxGuardLogo size={18} />
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">FluxGuard</span>
+              <span className="text-xs text-gray-500">Ask me anything about the data</span>
             </div>
-          )}
-          {messages.map((msg, idx) => (
-            <ChatBubble key={idx} role={msg.role} content={msg.content} steps={msg.steps} isTyping={isTyping} />
-          ))}
-          <div ref={scrollRef} />
-        </ScrollArea>
+          </div>
+          <UserMenu align="right" />
+        </div>
 
-        <div className="p-4 border-t border-white/10">
-          <form 
-            onSubmit={handleSend}
-            className="relative max-w-3xl mx-auto flex gap-2"
-          >
-            <Input 
-              placeholder="Message agent..." 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="bg-black text-white border-white"
-            />
-            <Button 
-              type="submit" 
-              disabled={isTyping} 
-              className="shrink-0"
+        <div className="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full">
+          <ScrollArea className="flex-1 p-4 overflow-y-auto">
+            {messages.length === 0 && (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
+              <div className="flex items-center justify-center mb-4">
+                <FluxGuardLogo size={40} />
+              </div>
+              <h1 className="text-2xl font-medium">FluxGuard</h1>
+                <p className="text-gray-500 max-w-md">
+                  Ask me about the dataset. I can search transactions, 
+                  analyze patterns, and run Python code to find answers.
+                </p>
+              </div>
+            )}
+            {messages.map((msg, idx) => (
+              <ChatBubble key={idx} role={msg.role} content={msg.content} steps={msg.steps} isTyping={isTyping} />
+            ))}
+            <div ref={scrollRef} />
+          </ScrollArea>
+
+          <div className="p-4 border-t border-white/10">
+            <form 
+              onSubmit={handleSend}
+              className="relative max-w-3xl mx-auto flex gap-2"
             >
-              {isTyping ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-            </Button>
-          </form>
+              <Input 
+                placeholder="Message agent..." 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                className="bg-black text-white border-white"
+              />
+              <Button 
+                type="submit" 
+                disabled={isTyping} 
+                className="shrink-0"
+              >
+                {isTyping ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+              </Button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

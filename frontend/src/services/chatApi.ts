@@ -1,22 +1,21 @@
+import { apiFetch } from './api';
 import type { ChatMessage } from '../types';
 
 export const chatService = {
   async getHealth() {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/health`);
+    const res = await apiFetch('/api/health');
     return res.json();
   },
 
   async *streamChat(message: string, history: ChatMessage[]) {
-    // Inject markdown formatting instruction for the LLM (not shown in UI)
     const markdownInstruction: ChatMessage = {
       role: 'user',
       content: 'You MUST format your response using Markdown syntax. Use **bold**, *italic*, `inline code`, code blocks with language tags (```), headings (##, ###), bullet lists, numbered lists, tables, and blockquotes to make answers clear and well-structured. Always put code in proper code blocks with language specification.',
     };
     const augmentedHistory = [markdownInstruction, ...history];
 
-    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/chat/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const response = await apiFetch('/api/chat/stream', {
+      method: 'POST',
       body: JSON.stringify({ message, history: augmentedHistory }),
     });
 
