@@ -1,8 +1,8 @@
 """
 FastAPI application for the AML analysis LangGraph agent.
 
-Exposes a ``POST /chat`` endpoint that accepts a user message and optional
-conversation history, then returns the agent's response.
+Provides chat endpoints (blocking and SSE streaming) and authentication
+(signup, login, session management).
 
 Quick start::
 
@@ -20,20 +20,33 @@ from __future__ import annotations
 import logging
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.api.routes import router
+from app.api.routes import router as chat_router
+from app.auth.routes import router as auth_router
+from app.auth.utils import is_public_path, validate_session
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler — logs startup / shutdown events."""
+    """Application lifespan handler — initialises auth DB, logs events."""
     logger.info("AML Analysis API starting up…")
+
+    # Initialise the auth database (creates tables if needed)
+    from app.auth.database import init_auth_db
+    init_auth_db()
+    logger.info("Auth database ready.")
+
     yield
-    # Shutdown: close the singleton QueryEngine
+
+    # Shutdown: close auth DB and query engine
+    from app.auth.database import close_auth_db
+    close_auth_db()
+
     from app.tools.tool_definitions import close_engine
     close_engine()
     logger.info("AML Analysis API shut down.")
@@ -52,7 +65,51 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS (permit browser-based UIs during development) ─────────────────────
+# ── Authentication middleware (registered FIRST so CORS wraps it) ──────────
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Protect all API routes except public auth and docs paths.
+
+    Expects a ``Authorization: Bearer <token>`` header on protected routes.
+    Returns 401 with a ``redirect`` field for the frontend to navigate to login.
+
+    Note: Registered BEFORE CORS middleware so that CORS wraps auth.
+    This ensures every response (including 401) gets CORS headers.
+    """
+    # Skip auth for public paths
+    if is_public_path(request.url.path):
+        return await call_next(request)
+
+    # Check for valid session token
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": "Authentication required",
+                "redirect": "/login",
+            },
+        )
+
+    token = auth_header[7:]
+    # Offload sync SQLite to thread pool to avoid blocking the event loop
+    import asyncio
+    user = await asyncio.to_thread(validate_session, token)
+    if user is None:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": "Invalid or expired session",
+                "redirect": "/login",
+            },
+        )
+
+    # Attach user info to request state so route handlers can reuse it
+    request.state.user = user
+    return await call_next(request)
+
+
+# ── CORS (registered AFTER auth so it wraps auth as the outermost layer) ────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,10 +118,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Register routers -------------------------------------------------------
-app.include_router(router, prefix="/api")
 
-# ── Root redirect ---------------------------------------------------------
+# ── Register routers -------------------------------------------------------
+app.include_router(chat_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+
+
+# ── Root endpoint ----------------------------------------------------------
 
 
 @app.get("/")
