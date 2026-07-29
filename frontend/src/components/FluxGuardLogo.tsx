@@ -1,0 +1,56 @@
+interface FluxGuardLogoProps {
+  size?: number;
+  className?: string;
+}
+
+export const FluxGuardLogo = ({ size = 32, className = '' }: FluxGuardLogoProps) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 200 250"
+    width={size}
+    height={size * 1.25}
+    role="img"
+    aria-label="FluxGuard Logo"
+    className={className}
+  >
+    {/* Shield Outline */}
+    <path
+      d="M 100 8 L 18 48 L 18 130 C 18 185 100 242 100 242 C 100 242 182 185 182 130 L 182 48 Z"
+      fill="none"
+      stroke="white"
+      strokeWidth="14"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    {/* Top Flux - Wavy Arrow */}
+    <path
+      d="M 28 85 C 45 55, 65 115, 85 85 S 125 55, 148 85"
+      fill="none"
+      stroke="white"
+      strokeWidth="14"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M 148 85 L 128 68 L 128 102 Z" fill="white" />
+    {/* Middle Flux */}
+    <path
+      d="M 28 135 C 45 105, 65 165, 85 135 S 125 105, 148 135"
+      fill="none"
+      stroke="white"
+      strokeWidth="14"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M 148 135 L 128 118 L 128 152 Z" fill="white" />
+    {/* Bottom Flux */}
+    <path
+      d="M 28 185 C 45 155, 65 215, 85 185 S 125 155, 148 185"
+      fill="none"
+      stroke="white"
+      strokeWidth="14"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M 148 185 L 128 168 L 128 202 Z" fill="white" />
+  </svg>
+);
