@@ -1,0 +1,40 @@
+# ── Docker Compose for backend deployment ────────────────────────────────────
+#
+# Usage:
+#   docker compose up -d
+#
+# The SQLite auth database is persisted via a named volume so user accounts
+# and sessions survive container restarts and rebuilds.
+#
+# Environment variables (set in .env or override here):
+#   LLM_PROVIDER   — "openai" or "google"
+#   LLM_MODEL      — e.g. "gpt-4o", "gemini-2.0-flash"
+#   LLM_API_KEY    — API key for the LLM provider
+#   LLM_BASE_URL   — (optional) custom base URL for OpenAI-compatible endpoints
+#   SESSION_EXPIRY_DAYS — session lifetime in days (default: 7)
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fluxguard-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist the SQLite auth database across restarts/rebuilds
+      - auth-db-data:/data
+    environment:
+      # ── LLM configuration ─────────────────────────────────────────────
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      # ── Auth configuration ─────────────────────────────────────────────
+      - DATABASE_URL=/data/auth.db
+      - SESSION_EXPIRY_DAYS=${SESSION_EXPIRY_DAYS:-7}
+
+volumes:
+  auth-db-data:
+    driver: local

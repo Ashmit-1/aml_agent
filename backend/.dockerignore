@@ -1,0 +1,61 @@
+# ── Version control ──────────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Python artifacts ─────────────────────────────────────────────────────────
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ────────────────────────────────────────────────────
+.venv
+venv/
+env/
+
+# ── IDE / editor files ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS files ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Documentation / specs ──────────────────────────────────────────────────
+*.md
+docs/
+design.md
+
+# ── Docker files (avoid recursive builds) ──────────────────────────────────
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# ── Environment files (secrets should be passed at runtime) ────────────────
+.env
+.env.*
+!.env.example
+
+# ── Auth database (runtime artifact, not source) ───────────────────────────
+auth.db
+auth.db-shm
+auth.db-wal
+
+# ── Data files that shouldn't be in the image ──────────────────────────────
+*.csv
+*.json
+!app/data/models/*.pkl
+
+# ── Test files ──────────────────────────────────────────────────────────────
+tests/
+*_test.py
+test_*.py
+pytest.ini
+.coverage
+htmlcov/
