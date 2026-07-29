@@ -7,3 +7,22 @@ body {
   color: white;
   font-family: 'Inter', sans-serif;
 }
+
+/* ── Custom keyframe animations (beyond Tailwind config) ── */
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-down {
+  animation: slide-down 250ms ease-out forwards;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 400ms ease-out forwards;
+}

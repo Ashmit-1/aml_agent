@@ -98,7 +98,7 @@ export const Sidebar = () => {
                     className="bg-transparent text-white text-sm outline-none w-full"
                     value={editValue}
                     onChange={(e) => setEditValue(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleRename(conv.id)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRename(conv.id).catch(console.error)}
                     onBlur={() => setEditingId(null)}
                   />
                 ) : (
