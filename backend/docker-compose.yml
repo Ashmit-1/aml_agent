@@ -1,18 +1,3 @@
-# ── Docker Compose for backend deployment ────────────────────────────────────
-#
-# Usage:
-#   docker compose up -d
-#
-# The SQLite auth database is persisted via a named volume so user accounts
-# and sessions survive container restarts and rebuilds.
-#
-# Environment variables (set in .env or override here):
-#   LLM_PROVIDER   — "openai" or "google"
-#   LLM_MODEL      — e.g. "gpt-4o", "gemini-2.0-flash"
-#   LLM_API_KEY    — API key for the LLM provider
-#   LLM_BASE_URL   — (optional) custom base URL for OpenAI-compatible endpoints
-#   SESSION_EXPIRY_DAYS — session lifetime in days (default: 7)
-
 services:
   backend:
     build:
@@ -21,20 +6,25 @@ services:
     container_name: fluxguard-backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
-      # Persist the SQLite auth database across restarts/rebuilds
       - auth-db-data:/data
+      - ./backend/app/data:/app/app/data
     environment:
-      # ── LLM configuration ─────────────────────────────────────────────
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o}
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-}
-      # ── Auth configuration ─────────────────────────────────────────────
       - DATABASE_URL=/data/auth.db
       - SESSION_EXPIRY_DAYS=${SESSION_EXPIRY_DAYS:-7}
-
-volumes:
-  auth-db-data:
-    driver: local
+    command: >
+      sh -c "
+        if [ ! -f /app/app/data/SAML-D.csv ]; then
+          echo 'Downloading dataset...' &&
+          curl -L -o /tmp/SAML-D.zip https://www.kaggle.com/api/v1/datasets/download/berkanoztas/synthetic-transaction-monitoring-dataset-aml &&
+          unzip -o /tmp/SAML-D.zip -d /app/app/data/ &&
+          find /app/app/data -name '*.csv' -exec mv {} /app/app/data/SAML-D.csv \; 2>/dev/null || true &&
+          rm /tmp/SAML-D.zip
+        fi &&
+        uvicorn app.api:app --host 0.0.0.0 --port 8001 --workers 4
+      "

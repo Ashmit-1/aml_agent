@@ -48,7 +48,6 @@ auth.db-shm
 auth.db-wal
 
 # ── Data files that shouldn't be in the image ──────────────────────────────
-*.csv
 *.json
 !app/data/models/*.pkl
 
@@ -59,3 +58,6 @@ test_*.py
 pytest.ini
 .coverage
 htmlcov/
+
+# Dataset files
+app/data/SAML-D.csv
