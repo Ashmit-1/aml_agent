@@ -40,6 +40,12 @@ RUN apt-get update && \
 # Create non-root user early
 RUN useradd -m -u 1000 appuser
 
+# Create the persistent data directory for the SQLite auth DB and grant
+# the app user write access. Without this, Docker mounts the named volume
+# at /data as a root-owned directory and the non-root appuser cannot
+# create the database file (sqlite3.OperationalError: unable to open database file).
+RUN mkdir -p /data && chown appuser:appuser /data
+
 WORKDIR /app
 
 # Copy the virtual environment and application from the builder

@@ -1,30 +1,104 @@
+# ── Docker Compose for backend deployment ────────────────────────────────────
+#
+# Usage:
+#   docker compose up -d
+#
+# This compose file is fully self-contained and works on a fresh VPS.
+# All images are pulled from Docker Hub - no local files needed.
+#
+# Environment variables (set in .env or override here):
+#   LLM_PROVIDER   — "openai" or "google"
+#   LLM_MODEL      — e.g. "gpt-4o", "gemini-2.0-flash"
+#   LLM_API_KEY    — API key for the LLM provider (REQUIRED)
+#   LLM_BASE_URL   — (optional) custom base URL for OpenAI-compatible endpoints
+#   SESSION_EXPIRY_DAYS — session lifetime in days (default: 7)
+#   IMAGE_TAG      — Docker image tag (default: latest)
+
 services:
+  # ── Data Downloader Service ──────────────────────────────────────────────
+  # Downloads the dataset before the backend starts
+  data-downloader:
+    image: alpine:latest
+    container_name: fluxguard-data-downloader
+    volumes:
+      - dataset-data:/data
+    command: >
+      sh -c "
+        echo '=========================================' &&
+        echo 'Starting dataset download...' &&
+        echo '=========================================' &&
+        apk add --no-cache curl unzip &&
+        if [ -f /data/SAML-D.csv ]; then
+          echo '✓ Dataset already exists, skipping download...'
+        else
+          echo 'Downloading dataset from Kaggle...' &&
+          curl -L -o /tmp/SAML-D.zip https://www.kaggle.com/api/v1/datasets/download/berkanoztas/synthetic-transaction-monitoring-dataset-aml &&
+          echo 'Extracting dataset...' &&
+          unzip -o /tmp/SAML-D.zip -d /data/ &&
+          if [ -f /data/SAML-D.csv ]; then
+            echo '✓ Dataset extracted successfully as SAML-D.csv'
+          else
+            # Find any CSV file and rename it
+            find /data -name '*.csv' -exec mv {} /data/SAML-D.csv \; 2>/dev/null || true
+          fi &&
+          rm /tmp/SAML-D.zip &&
+          echo '✓ Dataset downloaded and extracted successfully'
+        fi
+        echo '=========================================' &&
+        echo 'Dataset ready!' &&
+        echo '========================================='
+      "
+    restart: "no"
+
+  # ── Backend Service ──────────────────────────────────────────────────────
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Pull from Docker Hub - REPLACE WITH YOUR IMAGE NAME
+    image: ${IMAGE_REPO:-yourusername}/fluxguard-backend:${IMAGE_TAG:-latest}
     container_name: fluxguard-backend
     restart: unless-stopped
     ports:
       - "8001:8001"
     volumes:
       - auth-db-data:/data
-      - ./backend/app/data:/app/app/data
+      - dataset-data:/app/app/data
     environment:
+      # ── LLM configuration ─────────────────────────────────────────────
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o}
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-}
+      # ── Auth configuration ─────────────────────────────────────────────
       - DATABASE_URL=/data/auth.db
       - SESSION_EXPIRY_DAYS=${SESSION_EXPIRY_DAYS:-7}
-    command: >
+      # ── Dataset configuration ──────────────────────────────────────────
+      - DATASET_PATH=/app/app/data/SAML-D.csv
+    depends_on:
+      - data-downloader
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/app/data/SAML-D.csv"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Ensure we wait for dataset to be ready
+    entrypoint: >
       sh -c "
-        if [ ! -f /app/app/data/SAML-D.csv ]; then
-          echo 'Downloading dataset...' &&
-          curl -L -o /tmp/SAML-D.zip https://www.kaggle.com/api/v1/datasets/download/berkanoztas/synthetic-transaction-monitoring-dataset-aml &&
-          unzip -o /tmp/SAML-D.zip -d /app/app/data/ &&
-          find /app/app/data -name '*.csv' -exec mv {} /app/app/data/SAML-D.csv \; 2>/dev/null || true &&
-          rm /tmp/SAML-D.zip
-        fi &&
+        echo '=========================================' &&
+        echo 'Waiting for dataset to be ready...' &&
+        echo '=========================================' &&
+        while [ ! -f /app/app/data/SAML-D.csv ]; do
+          echo 'Waiting for dataset...'
+          sleep 2
+        done &&
+        echo '✓ Dataset found, starting application...' &&
+        echo '=========================================' &&
         uvicorn app.api:app --host 0.0.0.0 --port 8001 --workers 4
       "
+
+volumes:
+  # SQLite database volume
+  auth-db-data:
+    driver: local
+  # Dataset volume
+  dataset-data:
+    driver: local
