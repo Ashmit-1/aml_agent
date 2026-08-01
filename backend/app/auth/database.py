@@ -49,6 +49,11 @@ def get_connection() -> sqlite3.Connection:
     if _connection is None:
         db_path = _get_db_path()
         logger.info("Opening auth database: %s", db_path)
+        # Ensure the parent directory exists so sqlite3 can create the DB file.
+        # Without this, a missing directory raises "unable to open database file".
+        parent = os.path.dirname(db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         _connection = sqlite3.connect(db_path, check_same_thread=False)
         _connection.row_factory = sqlite3.Row
         _connection.execute("PRAGMA journal_mode=DELETE")
